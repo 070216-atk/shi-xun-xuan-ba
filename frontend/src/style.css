@@ -1,0 +1,28 @@
+:root {
+  --brand-green: #1b6e5a;
+  --brand-blue: #1e3a8a;
+  --brand-orange: #ea6a1f;
+  --el-color-primary: #1b6e5a;
+  --el-color-primary-dark-2: #155847;
+  --el-color-primary-light-3: #4a8c7c;
+  --el-color-primary-light-5: #7aab9f;
+  --el-color-primary-light-7: #a9cbc2;
+  --el-color-primary-light-8: #c1dbd4;
+  --el-color-primary-light-9: #e8f2ef;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #f4f7f9;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1f2d3d;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.page-title { font-size: 20px; font-weight: 700; color: var(--brand-blue); margin: 8px 0 16px; }
+.card { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(30,58,138,.08); }
+.muted { color: #8492a6; font-size: 13px; }
+.deadline { color: #d03050; font-weight: 700; }
+@media (max-width: 480px) {
+  .page { padding: 10px; }
+  .card { padding: 12px; }
+}
