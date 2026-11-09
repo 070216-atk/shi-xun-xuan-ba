@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: lab-selection
+
+  datasource:
+    # TODO 1: 数据库名必须是 lab_selection（schema.sql 里已建好）
+    url: jdbc:mysql://localhost:3306/lab_selection?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    # TODO 2: 改成你自己的 MySQL 账号密码
+    username: root
+    password: "改成你的MySQL密码"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+mybatis:
+  # SQL 写在 resources/mapper/*.xml（也可以全用注解，二选一，别混）
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.college.selection.entity
+  configuration:
+    # 数据库 snake_case → Java camelCase，必须开，否则字段全对不上
+    map-underscore-to-camel-case: true
+
+logging:
+  level:
+    com.college.selection: debug
+
+# 自定义配置
+selection:
+  jwt:
+    secret: "请换成一串足够长的随机字符串，至少32位"
+    expire-seconds: 7200
