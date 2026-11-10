@@ -172,4 +172,28 @@ public interface AdminMapper {
 
     @Update("UPDATE publicity SET objection_count = 0 WHERE id = #{id}")
     int clearObjections(@Param("id") Long id);
+
+    // ---------------- 最终名单（公示用） ----------------
+
+    @Select("""
+            SELECT u.code AS code, u.real_name AS realName, u.class_name AS className,
+                   l.id AS labId, l.code AS labCode, l.name AS labName, m.name AS mentorName
+              FROM offer o
+              JOIN sys_user u ON u.id = o.student_id
+              JOIN lab l      ON l.id = o.lab_id
+              JOIN mentor m   ON m.id = o.mentor_id
+             WHERE o.round_no = #{round} AND o.status = 'CONFIRMED'
+             ORDER BY l.code, u.code
+            """)
+    java.util.List<java.util.Map<String, Object>> confirmedResults(@Param("round") Integer round);
+
+    // ---------------- 学生名单 ----------------
+
+    @Select("""
+            SELECT id AS studentId, code AS code, real_name AS realName, class_name AS className
+              FROM sys_user
+             WHERE role = 'STUDENT' AND status = 1
+             ORDER BY code
+            """)
+    java.util.List<java.util.Map<String, Object>> allStudents();
 }

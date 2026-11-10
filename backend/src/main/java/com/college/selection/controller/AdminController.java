@@ -132,6 +132,24 @@ public class AdminController {
         return Result.ok(null);
     }
 
+    /** 当前公示状态（没有则返回 null） */
+    @GetMapping("/publicity")
+    public Result<Publicity> publicity(@RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(adminService.latestPublicity(round));
+    }
+
+    /** 全部学生（管理端表格、看板用） */
+    @GetMapping("/students")
+    public Result<List<Map<String, Object>>> students() {
+        return Result.ok(adminService.allStudents());
+    }
+
+    /** 已确认的最终名单（公示用） */
+    @GetMapping("/results")
+    public Result<List<Map<String, Object>>> results(@RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(adminService.confirmedResults(round));
+    }
+
     private Integer round(AdjustReq req) {
         return req.round == null ? 1 : req.round;
     }

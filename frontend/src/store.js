@@ -1,91 +1,389 @@
-import { reactive, watch } from 'vue'
-import { users, students, labs } from './mock/data'
+/**
+ * 数据层（已接后端）
+ *
+ * 设计原则：**保持和原来的 mock 一样的数据形状**，这样页面几乎不用改。
+ *   · 人员一律用【学号】做 key（store.applications / offers / finalResults）
+ *   · labs / stages / students 都是响应式数组，页面直接 v-for
+ */
+import { reactive } from 'vue'
+import * as api from './api'
+import { clearToken } from './api/http'
 
-const KEY = 'lab-selection-demo-v1'
+export const store = reactive({
+  user: null,
+  round: 1,
+  currentStage: 0,
+  stageDeadline: 0,
 
-function seed() {
-  const applications = {}
-  students.slice(0, 36).forEach((s, i) => {
-    const a = [(i % 5) + 1, ((i + 2) % 5) + 1]
-    const labIds = i % 3 === 0 ? [...a, ((i + 4) % 5) + 1].map(n => 'L' + n) : a.map(n => 'L' + n)
-    applications[`${s.id}:1`] = { labIds, obeyInner: i % 4 !== 0, obeyCross: i % 3 !== 0, time: '11月2日 09:' + String(10 + (i % 50)).padStart(2, '0') }
-  })
-  return {
-    user: null,
-    currentStage: 3,
-    round: 1,
-    stageDeadline: Date.now() + 4 * 3600 * 1000,
-    applications,
-    scores: {},
-    labLists: {},
-    offers: {
-      S2023001: [{ labId: 'L1', status: 'pending' }, { labId: 'L3', status: 'pending' }],
-      S2023002: [{ labId: 'L2', status: 'confirmed' }]
-    },
-    finalResults: { S2023002: 'L2' },
-    adjustLog: [],
-    talkRecords: [],
-    publicity: { published: false, start: null, ended: false },
-    notifications: [
-      { time: '11月2日 08:00', text: '意向填报已开启，截止 12:00，请尽快提交', read: false }
-    ]
+  applications: {},   // `学号:轮次` -> { labIds, mentorIds, obeyInner, obeyCross, time }
+  scores: {},         // `学号:实训室id` -> { attitude, logic, coding, time, comment, total }
+  labLists: {},       // 实训室id -> { admit, waitlist, adjust }
+  offers: {},         // 学号 -> [{ offerId, labId, mentorId, mentorName, status }]
+  finalResults: {},   // 学号 -> 实训室id
+  adjustLog: [],
+  talkRecords: [],
+  publicity: { published: false, start: null, ended: false },
+  notifications: [],
+  quotas: [],         // 管理端：/admin/quotas 的原样数据
+  applicants: [],     // 导师端：本室报名学生（后端原样）
+  pool: { vacancies: [], candidates: [] },
+  results: [],        // 管理端：已确认的最终名单
+  dashboard: {}
+})
+
+export const labs = reactive([])
+export const stages = reactive([])
+export const students = reactive([])
+
+// 学号 <-> 后端数字 id
+const idToCode = {}
+const codeToId = {}
+const codeToName = {}
+
+const pad = (n) => String(n).padStart(2, '0')
+const fmt = (s) => (s ? String(s).slice(0, 16) : '')
+
+/** 后端 'SUBMITTED' 这类枚举 -> 页面用的中文/简称 */
+const offerStatus = (s) => ({
+  ISSUED: 'pending',
+  CONFIRMED: 'confirmed',
+  DECLINED: 'declined',
+  EXPIRED: 'expired',
+  VOID: 'void'
+}[s] || 'pending')
+
+function indexStudents(list) {
+  for (const s of list) {
+    idToCode[s.studentId] = s.code
+    codeToId[s.code] = s.studentId
+    codeToName[s.code] = s.realName
+    if (!students.find((x) => x.id === s.code)) {
+      students.push({ id: s.code, sid: s.studentId, name: s.realName, className: s.className })
+    }
   }
 }
 
-let saved = null
-try { saved = JSON.parse(localStorage.getItem(KEY)) } catch { /* 损坏的缓存直接重建 */ }
+// ---------------- 公开数据 ----------------
 
-export const store = reactive(saved && saved.applications ? saved : seed())
-
-watch(store, () => localStorage.setItem(KEY, JSON.stringify(store)), { deep: true })
-
-export function resetDemo() {
-  Object.assign(store, seed())
+export async function loadPublic() {
+  const [ls, ss] = await Promise.all([api.getLabs(store.round), api.getStages(store.round)])
+  labs.splice(0, labs.length, ...ls.map((l) => ({ ...l, mentors: l.mentors || [] })))
+  stages.splice(
+    0,
+    stages.length,
+    ...ss.map((s) => ({
+      id: s.stageNo,
+      dbId: s.id,
+      name: s.name,
+      window: `${fmt(s.startAt)} ~ ${fmt(s.endAt)}`,
+      desc: s.description || '',
+      open: s.open,
+      current: s.isCurrent,
+      remaining: s.remainingSeconds
+    }))
+  )
+  const cur = stages.find((s) => s.current)
+  store.currentStage = cur ? cur.id : 0
+  store.stageDeadline = cur && cur.remaining != null ? Date.now() + cur.remaining * 1000 : 0
+  return { labs, stages }
 }
 
-export function login(username, password, expectedRole) {
-  const u = users.find(u => u.username === username && u.password === password)
-  if (!u) return 'fail'
-  if (expectedRole && u.role !== expectedRole) return 'mismatch'
-  store.user = { ...u }
-  delete store.user.password
+export async function loadLab(id) {
+  const d = await api.getLab(id, store.round)
+  const merged = { ...d, mentors: d.mentors || [] }
+  const i = labs.findIndex((l) => String(l.id) === String(id))
+  if (i >= 0) labs.splice(i, 1, merged)
+  else labs.push(merged)
+  return merged
+}
+
+export function labById(id) {
+  return labs.find((l) => String(l.id) === String(id))
+}
+
+export function appliedCount(labId) {
+  const l = labById(labId)
+  return l ? l.applied || 0 : 0
+}
+
+export function remainingQuota(labId) {
+  const q = store.quotas.find((x) => String(x.labId) === String(labId))
+  if (q) return q.remaining
+  const l = labById(labId)
+  return l ? l.quota || 0 : 0
+}
+
+// ---------------- 登录 ----------------
+
+export async function login(username, password, expectedRole) {
+  let data
+  try {
+    data = await api.login(username, password)
+  } catch (e) {
+    return 'fail'
+  }
+  const u = data.user
+  const role = (u.role || '').toLowerCase()
+  if (expectedRole && role !== expectedRole) {
+    clearToken()
+    return 'mismatch'
+  }
+  store.user = {
+    id: u.code,          // 页面用学号当 key
+    code: u.code,
+    name: u.realName,
+    role,
+    username: u.username,
+    dbId: u.id,
+    labId: u.labId,
+    mentorId: u.mentorId,
+    className: u.className
+  }
   return 'ok'
 }
 
 export function logout() {
+  clearToken()
   store.user = null
+  store.applications = {}
+  store.offers = {}
+  store.scores = {}
+  store.labLists = {}
+  store.finalResults = {}
+  store.quotas = []
 }
 
-export function labById(id) {
-  return labs.find(l => l.id === id)
+// ---------------- 学生端 ----------------
+
+export async function loadStudent() {
+  const sid = store.user.id
+  const [app, offers] = await Promise.all([
+    api.getMyApplication(store.round),
+    api.getMyOffers(store.round)
+  ])
+  const key = `${sid}:${store.round}`
+  if (app) {
+    store.applications[key] = {
+      labIds: (app.items || []).map((i) => i.labId),
+      mentorIds: (app.items || []).map((i) => i.mentorId),
+      obeyInner: !!app.adjustInLab,
+      obeyCross: !!app.adjustCross,
+      time: fmt(app.submittedAt)
+    }
+  } else {
+    delete store.applications[key]
+  }
+  store.offers[sid] = offers.map((o) => ({
+    offerId: o.id,
+    labId: o.labId,
+    mentorId: o.mentorId,
+    mentorName: o.mentorName,
+    labName: o.labName,
+    type: o.type,
+    status: offerStatus(o.status)
+  }))
+  const conf = offers.find((o) => o.status === 'CONFIRMED')
+  if (conf) store.finalResults[sid] = conf.labId
+  else delete store.finalResults[sid]
 }
 
-export function appliedCount(labId, round = 1) {
-  return Object.entries(store.applications)
-    .filter(([k, v]) => k.endsWith(':' + round) && v.labIds.includes(labId)).length
+/** items: [{ labId, mentorId }] */
+export async function submitApplication(items, adjustInLab, adjustCross) {
+  await api.saveMyApplication({
+    round: store.round,
+    items,
+    adjustInLab,
+    adjustCross
+  })
+  await Promise.all([loadStudent(), loadPublic()])
 }
 
-export function remainingQuota(labId) {
-  const lab = labById(labId)
-  const taken = Object.values(store.finalResults).filter(id => id === labId).length
-  return lab.quota - taken
-}
-
-export function setStage(id) {
-  store.currentStage = id
-  store.stageDeadline = Date.now() + 4 * 3600 * 1000
-  if (id === 6 && store.round < 3) store.round += 1
+export async function confirmOffer(offerId) {
+  const r = await api.confirmOffer(offerId)
+  await loadStudent()
+  return r
 }
 
 export function studentStatus(studentId) {
   if (store.publicity.ended && store.finalResults[studentId]) return '正式入组'
   if (store.finalResults[studentId]) return '已录取'
-  const offers = store.offers[studentId] || []
-  if (offers.some(o => o.status === 'confirmed')) return '已确认'
-  if (offers.some(o => o.status === 'pending')) return offers.filter(o => o.status === 'pending').length > 1 ? '待确认（多意向）' : '拟录取'
-  if (offers.length && offers.every(o => ['declined', 'expired'].includes(o.status))) return '已放弃'
-  const app = store.applications[`${studentId}:${store.round}`]
-  if (app) return store.currentStage >= 4 ? '面试完成' : '已填报'
-  if (store.currentStage >= 6) return '补录中'
+  const os = store.offers[studentId] || []
+  if (os.some((o) => o.status === 'confirmed')) return '已确认'
+  if (os.some((o) => o.status === 'pending')) {
+    return os.filter((o) => o.status === 'pending').length > 1 ? '待确认（多意向）' : '拟录取'
+  }
+  if (os.length && os.every((o) => ['declined', 'expired'].includes(o.status))) return '已放弃'
+  if (store.applications[`${studentId}:${store.round}`]) return '已填报'
   return '未填报'
 }
+
+// ---------------- 导师端 ----------------
+
+export async function loadTeacher() {
+  const [list, lists] = await Promise.all([
+    api.getApplicants(store.round),
+    api.getTeacherLists(store.round)
+  ])
+  store.applicants = list
+  indexStudents(
+    list.map((a) => ({
+      studentId: a.studentId,
+      code: a.code,
+      realName: a.realName,
+      className: a.className
+    }))
+  )
+
+  const labId = store.user.labId
+  for (const a of list) {
+    const code = a.code
+    const key = `${code}:${labId}`
+    if (a.scoreAttitude != null) {
+      store.scores[key] = {
+        attitude: a.scoreAttitude,
+        logic: a.scoreLogic,
+        coding: a.scoreCoding,
+        time: a.scoreTime,
+        comment: a.scoreComment || '',
+        total: a.scoreTotal
+      }
+    }
+    store.applications[`${code}:${store.round}`] = {
+      labIds: [labId],
+      mentorIds: [a.mentorId],
+      obeyInner: !!a.adjustInLab,
+      obeyCross: !!a.adjustCross,
+      time: ''
+    }
+  }
+
+  const pick = (arr) => (arr || []).map((o) => idToCode[o.studentId] || String(o.studentId))
+  const mine = lists.mentorId
+  if (mine) {
+    store.labLists[labId] = {
+      admit: pick(lists.admitted),
+      waitlist: pick(lists.waitlist),
+      adjust: pick(lists.adjustCandidates)
+    }
+  }
+}
+
+/** body: { attitude, logic, coding, time, comment } */
+export async function saveScore(studentCode, body) {
+  const sid = codeToId[studentCode]
+  await api.saveScore(sid, { round: store.round, ...body })
+  await loadTeacher()
+}
+
+export async function submitLists({ admit, waitlist, adjust }) {
+  const map = (arr) => arr.map((c) => codeToId[c])
+  await api.saveTeacherLists({
+    round: store.round,
+    admitted: map(admit),
+    waitlist: map(waitlist),
+    adjustCandidates: map(adjust)
+  })
+  await loadTeacher()
+}
+
+// ---------------- 管理端 ----------------
+
+export async function loadAdmin() {
+  const [qs, list, pool, db, results] = await Promise.all([
+    api.getQuotas(store.round),
+    api.getStudents(),
+    api.getAdjustPool(store.round),
+    api.getDashboard(store.round),
+    api.getResults(store.round)
+  ])
+  store.quotas = qs
+  store.results = results || []
+  indexStudents(list.map((s) => ({ studentId: s.studentId, code: s.code, realName: s.realName, className: s.className })))
+  store.dashboard = db
+  store.pool = pool
+
+  // 把调剂池里的学生也补进 applications / offers，供页面复用
+  for (const c of pool.candidates) {
+    store.applications[`${c.code}:${store.round}`] = store.applications[`${c.code}:${store.round}`] || {
+      labIds: [],
+      mentorIds: [],
+      obeyInner: !!c.adjustInLab,
+      obeyCross: !!c.adjustCross,
+      time: ''
+    }
+    store.applications[`${c.code}:${store.round}`].obeyInner = !!c.adjustInLab
+    store.applications[`${c.code}:${store.round}`].obeyCross = !!c.adjustCross
+    if (c.offerType && c.offerStatus) {
+      store.offers[c.code] = [
+        {
+          offerId: null,
+          labId: null,
+          type: c.offerType,
+          status: offerStatus(c.offerStatus),
+          rankNo: c.rankNo
+        }
+      ]
+    }
+  }
+
+  // 公示状态
+  try {
+    const p = await api.getPublicity(store.round)
+    if (p) {
+      store.publicity = {
+        published: p.status === 'PUBLISHED' || p.status === 'ENDED',
+        start: fmt(p.startAt),
+        ended: p.status === 'ENDED'
+      }
+    }
+  } catch (e) {
+    /* 没有公示记录就保持默认 */
+  }
+}
+
+export async function doAdjust(level, mentorId, studentCodes, conclusion) {
+  const studentIds = studentCodes.map((c) => codeToId[c])
+  const body = { round: store.round, mentorId, studentIds, conclusion }
+  if (level === 1) await api.adjustInternal(body)
+  else if (level === 2) await api.adjustCross(body)
+  else await api.adjustTalk(body)
+  await loadAdmin()
+}
+
+export async function switchStage(stageNo) {
+  const st = stages.find((s) => s.id === stageNo)
+  if (!st || !st.dbId) return
+  const now = new Date()
+  const start = new Date(now.getTime() - 3600 * 1000)
+  const end = new Date(now.getTime() + 4 * 3600 * 1000)
+  const f = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`
+  await api.updateStage(st.dbId, { startAt: f(start), endAt: f(end) })
+  await loadPublic()
+}
+
+export async function openNextRound() {
+  await api.openRound(store.round + 1)
+  store.round += 1
+  await loadPublic()
+}
+
+export async function publishPublicity() {
+  const p = await api.publishPublicity({ round: store.round, days: 1 })
+  store.publicity = { published: true, start: fmt(p.startAt), ended: false }
+  return p
+}
+
+export async function endPublicity() {
+  await api.endPublicity(store.round)
+  store.publicity.ended = true
+}
+
+export async function markObjection(reason) {
+  await api.addObjection({ round: store.round, reason })
+}
+
+export async function resolveObjections() {
+  await api.resolveObjections(store.round)
+}
+
+export { fmt }

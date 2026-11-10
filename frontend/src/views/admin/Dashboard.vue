@@ -9,40 +9,50 @@
         </div>
       </el-col>
     </el-row>
+
     <div class="card">
       <div class="page-title">各实训室录取进度</div>
       <div v-for="l in labProgress" :key="l.name" style="margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
           <span>{{ l.name }}</span>
-          <span class="muted">{{ l.admitted }}/{{ l.quota }}（报名 {{ l.applied }}）</span>
+          <span class="muted">{{ l.confirmed }}/{{ l.quota }}（报名 {{ l.applied }}）</span>
         </div>
-        <el-progress :percentage="Math.round(l.admitted / l.quota * 100)" :stroke-width="14" />
+        <el-progress :percentage="l.quota ? Math.round(l.confirmed / l.quota * 100) : 0" :stroke-width="14" />
       </div>
+      <el-button size="small" style="margin-top:8px" @click="refresh">刷新</el-button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { labs, students } from '../../mock/data'
-import { store, appliedCount, remainingQuota } from '../../store'
+import { computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { store, loadAdmin } from '../../store'
 
-const allOffers = computed(() => Object.values(store.offers).flat())
+const d = computed(() => store.dashboard || {})
+
 const stats = computed(() => [
-  { label: '学生总数', value: students.length, color: '#1e3a8a' },
-  { label: '已填报（本轮）', value: Object.keys(store.applications).filter(k => k.endsWith(':' + store.round)).length, color: '#1b6e5a' },
-  { label: '面试已评价', value: Object.keys(store.scores).length, color: '#1e3a8a' },
-  { label: '拟录取意向', value: allOffers.value.length, color: '#ea6a1f' },
-  { label: '已确认', value: allOffers.value.filter(o => o.status === 'confirmed').length, color: '#1b6e5a' },
-  { label: '放弃/未选择', value: allOffers.value.filter(o => ['declined', 'expired'].includes(o.status)).length, color: '#d03050' },
-  { label: '调剂安排', value: store.adjustLog.length, color: '#ea6a1f' },
-  { label: '已录取', value: Object.keys(store.finalResults).length, color: '#1b6e5a' }
+  { label: '学生总数', value: store.students.length, color: '#1e3a8a' },
+  { label: '已填报（本轮）', value: d.value.applied ?? 0, color: '#1b6e5a' },
+  { label: '面试已评价', value: d.value.interviewed ?? 0, color: '#1e3a8a' },
+  { label: '拟录取待确认', value: d.value.issued ?? 0, color: '#ea6a1f' },
+  { label: '已确认', value: d.value.confirmed ?? 0, color: '#1b6e5a' },
+  { label: '递补人数', value: d.value.waitlist ?? 0, color: '#d03050' },
+  { label: '调剂候选', value: d.value.adjustCandidates ?? 0, color: '#ea6a1f' },
+  { label: '待安置（室内/跨室）', value: `${d.value.pendingInternal ?? 0}/${d.value.pendingCross ?? 0}`, color: '#1e3a8a' }
 ])
-const labProgress = computed(() => labs.map(l => ({
-  name: l.name, quota: l.quota,
-  admitted: l.quota - remainingQuota(l.id),
-  applied: appliedCount(l.id, store.round)
+
+const labProgress = computed(() => (store.quotas || []).map(q => ({
+  name: q.name,
+  quota: q.quota,
+  confirmed: q.confirmed,
+  applied: q.applied
 })))
+
+function refresh() {
+  loadAdmin().then(() => ElMessage.success('已刷新')).catch(e => ElMessage.error(e.message))
+}
+onMounted(() => loadAdmin().catch(e => ElMessage.error(e.message)))
 </script>
 
 <style scoped>

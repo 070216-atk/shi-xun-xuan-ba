@@ -265,6 +265,18 @@ public class AdminService {
         adminMapper.clearObjections(p.id);
     }
 
+    // ---------------- 学生名单 ----------------
+
+    /** 管理端用：全部学生，前端看板和数据表格要 */
+    public List<Map<String, Object>> allStudents() {
+        return adminMapper.allStudents();
+    }
+
+    /** 已确认的最终名单（公示用） */
+    public List<Map<String, Object>> confirmedResults(Integer round) {
+        return adminMapper.confirmedResults(round);
+    }
+
     // ---------------- 看板 ----------------
 
     public Map<String, Object> dashboard(Integer round) {

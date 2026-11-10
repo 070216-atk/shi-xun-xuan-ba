@@ -19,12 +19,12 @@ public class LabService {
         this.mentorMapper = mentorMapper;
     }
 
-    /** 列表：只带汇总信息，不带导师明细 */
+    /** 列表：带导师和各自名额（前端填报要按导师选，所以列表也返回导师） */
     public List<Lab> list(Integer round) {
         List<Lab> labs = labMapper.findAll();
         for (Lab lab : labs) {
             lab.applied = labMapper.countApplied(lab.id, round);
-            lab.mentors = null;      // 见 JacksonConfig：null 字段不会输出
+            lab.mentors = mentorMapper.findByLabId(lab.id);
         }
         return labs;
     }
