@@ -87,6 +87,12 @@ public interface OfferMapper {
     @Delete("DELETE FROM offer WHERE mentor_id = #{mentorId} AND round_no = #{round}")
     int deleteByMentor(@Param("mentorId") Long mentorId, @Param("round") Integer round);
 
+    /** 统筹调剂时先清掉该学生投给这个导师的旧意向，避免撞唯一键 */
+    @Delete("DELETE FROM offer WHERE student_id = #{studentId} AND mentor_id = #{mentorId} AND round_no = #{round}")
+    int deleteByStudentMentor(@Param("studentId") Long studentId,
+                              @Param("mentorId") Long mentorId,
+                              @Param("round") Integer round);
+
     @Insert("""
             INSERT INTO offer (student_id, lab_id, mentor_id, round_no, type, rank_no, status, issued_at, confirm_deadline)
             VALUES (#{studentId}, #{labId}, #{mentorId}, #{roundNo}, #{type}, #{rankNo}, #{status}, #{issuedAt}, #{confirmDeadline})
