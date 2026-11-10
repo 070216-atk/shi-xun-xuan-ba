@@ -71,3 +71,22 @@ UPDATE stage
 1. **`offer` 的唯一键是刻意的**：保证一轮内每室最多一个意向，所以接口 `/student/offers/{labId}/confirm` 才能用 `labId` 唯一定位。别随手删。
 2. **名额挂在 `lab` 上**，不在 `mentor` 上。以后要按导师分名额，加 `mentor.quota` 即可。
 3. **状态不建表**，由 `application` + `offer` + `publicity` 推导（枚举见 `schema.sql` 末尾注释）。推导逻辑必须集中在 service 层。
+
+## 6. 演示时让阶段保持开放
+
+按流程图的真实日期，所有阶段今天都已结束。演示前执行：
+
+```sql
+-- 把全部阶段整体平移到今天
+SET @shift = DATEDIFF(CURDATE(), '2026-11-02');
+UPDATE stage SET start_at = DATE_ADD(start_at, INTERVAL @shift DAY),
+                 end_at   = DATE_ADD(end_at,   INTERVAL @shift DAY);
+
+-- 或者只把"意向填报"打开（最常用）
+UPDATE stage
+   SET start_at = DATE_SUB(NOW(), INTERVAL 1 HOUR),
+       end_at   = DATE_ADD(NOW(), INTERVAL 1 DAY)
+ WHERE round_no = 1 AND stage_no = 3;
+```
+
+> 时间判断只在服务端做，改完库立即生效，不用重启服务。

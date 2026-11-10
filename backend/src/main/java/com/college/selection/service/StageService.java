@@ -1,15 +1,20 @@
 package com.college.selection.service;
 
+import com.college.selection.common.BizException;
+import com.college.selection.common.ErrorCode;
 import com.college.selection.entity.Stage;
 import com.college.selection.mapper.StageMapper;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
 public class StageService {
+
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final StageMapper stageMapper;
 
@@ -19,8 +24,8 @@ public class StageService {
 
     /**
      * 返回某轮全部阶段，并算出每个阶段"现在开不开、是不是当前阶段、还剩多少秒"。
-     * ⚠️ 时间判断只在这里做，而且用的是服务器时间（LocalDateTime.now()），
-     * 前端拿到 remainingSeconds 只用于显示倒计时，不能作为放行依据。
+     * ⚠️ 时间判断只在这里做，用的是服务器时间；
+     * 前端拿 remainingSeconds 只用于显示倒计时，不能作为放行依据。
      */
     public List<Stage> list(Integer round) {
         LocalDateTime now = LocalDateTime.now();
@@ -52,5 +57,25 @@ public class StageService {
             }
         }
         return null;
+    }
+
+    /**
+     * 校验某个环节此刻是否开放，不开放直接抛 2001。
+     * 所有"学生能不能提交/确认"的判断都要经过这里，不要在别处重复写时间比较。
+     */
+    public void assertOpen(Integer round, Integer stageNo) {
+        LocalDateTime now = LocalDateTime.now();
+        for (Stage s : stageMapper.findByRound(round)) {
+            if (!s.stageNo.equals(stageNo)) {
+                continue;
+            }
+            if (now.isBefore(s.startAt) || now.isAfter(s.endAt)) {
+                throw new BizException(ErrorCode.OUT_OF_WINDOW,
+                        String.format("当前不在「%s」的开放时间内（%s 至 %s）",
+                                s.name, s.startAt.format(FMT), s.endAt.format(FMT)));
+            }
+            return;
+        }
+        throw new BizException(ErrorCode.OUT_OF_WINDOW, "第 " + stageNo + " 阶段未配置时间窗");
     }
 }
