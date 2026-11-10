@@ -141,3 +141,14 @@ npm run dev      # http://localhost:5173
 启动成功后：
 - 接口地址：`http://localhost:8080/api/labs`
 - 演示账号：`admin` / `teacher01` / `student01`，密码统一 `123456`
+### 一键初始化数据库
+
+双击根目录的 **`初始化数据库.cmd`**。
+
+脚本会：找 `mysql.exe` → 读 `application-local.yml` 里的密码 → 确认 → 建表 → 导数据 → 打印校验结果 → 可选地把演示阶段设成现在开放。
+
+> ⚠️ **git 只同步文件，不同步数据库**。同事 `git pull` 之后，代码和 `schema.sql`/`seed.sql` 都更新了，
+> 但他电脑上的 MySQL 还是旧结构，**必须自己再跑一次这个脚本**，否则会报 `Unknown column 'quota'`。
+
+**判断自己的库是新是旧**：访问 `http://localhost:8080/api/labs`，
+看到 `"code": "202"` 是新库，看到 `"code": "L1"` 就是旧库，要重导。
