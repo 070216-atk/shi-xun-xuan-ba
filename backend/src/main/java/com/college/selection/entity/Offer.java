@@ -21,10 +21,14 @@ public class Offer {
     public LocalDateTime confirmedAt;
     public String remark;
 
-    // 非表字段
+    // 非表字段，由 SQL join 或 service 填充
     public String labCode;
     public String labName;
     public String mentorName;
-    /** 距离确认截止还有多少秒，由 service 计算 */
+    public String studentName;
+    public String studentCode;
+    /** 该生在本室的面试综合分 */
+    public Double scoreTotal;
+    /** 距离确认截止还有多少秒 */
     public Long remainingSeconds;
 }

@@ -78,4 +78,14 @@ public class StageService {
         }
         throw new BizException(ErrorCode.OUT_OF_WINDOW, "第 " + stageNo + " 阶段未配置时间窗");
     }
+
+    /** 取某阶段的结束时间，没配置返回 null（用在 offer 的确认截止时间上） */
+    public LocalDateTime getEndAt(Integer round, Integer stageNo) {
+        for (Stage s : stageMapper.findByRound(round)) {
+            if (s.stageNo.equals(stageNo)) {
+                return s.endAt;
+            }
+        }
+        return null;
+    }
 }

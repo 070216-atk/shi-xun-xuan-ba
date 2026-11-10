@@ -121,3 +121,20 @@ npm run dev      # http://localhost:5173
 3. **每天开工先 `git pull`**，推之前先拉。
 4. **绝不提交**：`node_modules/`、`target/`、`application-local.yml`、`.env`、任何密码（`.gitignore` 已覆盖）。
 5. 代码文件统一 LF 换行，`.gitattributes` 已配好，别手动改。
+
+---
+
+## 一键启动（推荐）
+
+双击项目根目录的 **`启动后端.cmd`**。
+
+脚本会自动完成：找 JDK（17~24，优先 21）→ 找 Maven → 打包 → 检查 8080 端口 → 启动。
+找不到 JDK 或 Maven 时会给出明确提示，不会一闪而过。
+
+> ⚠️ **不要用 `mvn spring-boot:run`**：在含中文的路径下，Maven 分叉出的 JVM 会丢失 classpath，
+> 报 `ClassNotFoundException: com.college.selection.SelectionApplication`。
+> 用 `mvn package` + `java -jar`，或者直接用上面的 .cmd。
+
+启动成功后：
+- 接口地址：`http://localhost:8080/api/labs`
+- 演示账号：`admin` / `teacher01` / `student01`，密码统一 `123456`
