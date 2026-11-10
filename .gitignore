@@ -1,3 +1,11 @@
+# ---------- 本机配置（每人一份，绝不提交） ----------
+application-local.yml
+**/application-local.yml
+.env
+.env.local
+*.pem
+*.key
+
 # ---------- 前端 ----------
 frontend/node_modules/
 frontend/dist/
@@ -6,7 +14,6 @@ frontend/*.local
 
 # ---------- 后端 ----------
 backend/target/
-backend/*.log
 *.class
 *.jar
 *.war
@@ -28,9 +35,3 @@ desktop.ini
 *.tmp
 ~$*
 *.bak
-
-# ---------- 环境变量与密钥（绝不提交） ----------
-.env
-.env.local
-*.pem
-*.key

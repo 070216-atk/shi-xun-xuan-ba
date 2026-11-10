@@ -5,12 +5,21 @@ spring:
   application:
     name: lab-selection
 
+  # ------------------------------------------------------------
+  # 本机专属配置放在 application-local.yml 里（数据库密码、JWT 密钥）。
+  # 该文件已被 .gitignore 排除，每人自己建一份：
+  #   复制 application-local.yml.example → application-local.yml，填自己的值
+  # 加 optional: 前缀表示"没有这个文件也能启动"，
+  # 这样室友没配时是先报连不上数据库，而不是直接启动失败。
+  # ------------------------------------------------------------
+  config:
+    import: optional:classpath:application-local.yml
+
   datasource:
-    # TODO 1: 数据库名必须是 lab_selection（schema.sql 里已建好）
+    # 库名必须是 lab_selection（见 framework/3.database/schema.sql）
     url: jdbc:mysql://localhost:3306/lab_selection?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    # TODO 2: 改成你自己的 MySQL 账号密码
+    # 账号密码属于本机配置，写在 application-local.yml 里覆盖
     username: root
-    password: "改成你的MySQL密码"
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jackson:
@@ -18,19 +27,17 @@ spring:
     time-zone: Asia/Shanghai
 
 mybatis:
-  # SQL 写在 resources/mapper/*.xml（也可以全用注解，二选一，别混）
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.college.selection.entity
   configuration:
-    # 数据库 snake_case → Java camelCase，必须开，否则字段全对不上
+    # 数据库 snake_case → Java camelCase，必须开
     map-underscore-to-camel-case: true
 
 logging:
   level:
     com.college.selection: debug
 
-# 自定义配置
 selection:
   jwt:
-    secret: "请换成一串足够长的随机字符串，至少32位"
+    # secret 属于本机配置，写在 application-local.yml 里
     expire-seconds: 7200

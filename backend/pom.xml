@@ -19,9 +19,13 @@
     <description>学生实训室进组选拔系统 - 后端</description>
 
     <properties>
-        <!-- 用 JDK 21：本机 PATH 里的 java 是 26，Spring Boot 3.3 在上面跑不起来 -->
-        <java.version>21</java.version>
-        <maven.compiler.release>21</maven.compiler.release>
+        <!--
+          编译目标定在 17，而不是 21：
+          JDK 17 / 21 都能编译和运行，换一台电脑的兼容面最大。
+          ⚠️ 别用 JDK 25 及以上运行：Spring Boot 3.3 还不支持。
+        -->
+        <java.version>17</java.version>
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -55,7 +59,7 @@
         <!--
           只引入 crypto，不引入 spring-boot-starter-security。
           原因：starter-security 一进来，所有接口默认 401，
-          在没有配好鉴权之前会把整个联调卡死。
+          在鉴权还没配好之前会把整个联调卡死。
           等接口都跑通了，再换成 starter-security + JWT 过滤器。
         -->
         <dependency>

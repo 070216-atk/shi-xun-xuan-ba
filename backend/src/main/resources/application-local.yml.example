@@ -1,0 +1,21 @@
+# ============================================================
+#  本机配置模板
+#  用法：复制本文件为 application-local.yml（同目录），填自己的值。
+#        application-local.yml 已被 .gitignore 排除，不会被提交。
+#  放在：backend/src/main/resources/application-local.yml
+# ============================================================
+
+spring:
+  datasource:
+    # 改成你自己的 MySQL 密码
+    password: "你的MySQL密码"
+
+    # 如果你的数据库账号不是 root，在这里覆盖（可选）
+    # username: your_user
+
+selection:
+  jwt:
+    # HS256 要求密钥至少 256 位 = 32 个字符，太短启动时会报 WeakKeyException
+    # 生成方法（PowerShell）：
+    #   -join ((1..48) | ForEach-Object { [char](Get-Random -InputObject (48..57 + 65..90 + 97..122)) })
+    secret: "换成一串至少 32 位的随机字符串"
