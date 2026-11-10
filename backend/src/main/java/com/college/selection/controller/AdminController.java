@@ -4,6 +4,7 @@ import com.college.selection.common.Result;
 import com.college.selection.config.LoginInterceptor;
 import com.college.selection.dto.AdjustPoolVO;
 import com.college.selection.dto.AdjustReq;
+import com.college.selection.dto.ObjectionReq;
 import com.college.selection.dto.QuotaVO;
 import com.college.selection.dto.StageUpdateReq;
 import com.college.selection.entity.Publicity;
@@ -102,6 +103,33 @@ public class AdminController {
     @GetMapping("/dashboard")
     public Result<Map<String, Object>> dashboard(@RequestParam(defaultValue = "1") Integer round) {
         return Result.ok(adminService.dashboard(round));
+    }
+
+    /** 提交一条公示异议（登记用，处理在线下） */
+    @PostMapping("/publicity/objections")
+    public Result<Void> addObjection(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestBody ObjectionReq req) {
+        adminService.addObjection(userId, req.round == null ? 1 : req.round, req.reason);
+        return Result.ok(null);
+    }
+
+    /** 异议处理完，清零；清零后 /publicity/end 才能通过 */
+    @PostMapping("/publicity/objections/resolve")
+    public Result<Void> resolveObjections(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestParam(defaultValue = "1") Integer round) {
+        adminService.resolveObjections(userId, round);
+        return Result.ok(null);
+    }
+
+    /** 开启下一轮补录（第 2 / 3 轮） */
+    @PostMapping("/rounds")
+    public Result<Void> openRound(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestBody AdjustReq req) {
+        adminService.openRound(userId, req.round);
+        return Result.ok(null);
     }
 
     private Integer round(AdjustReq req) {

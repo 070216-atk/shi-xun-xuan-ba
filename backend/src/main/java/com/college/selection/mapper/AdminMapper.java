@@ -142,4 +142,34 @@ public interface AdminMapper {
 
     @Select("SELECT COUNT(*) FROM offer WHERE round_no = #{round} AND type = 'ADJUST_CANDIDATE'")
     int countAdjustCandidates(@Param("round") Integer round);
+
+    // ---------------- 补录轮次 ----------------
+
+    @Select("SELECT status FROM selection_round WHERE round_no = #{round}")
+    String roundStatus(@Param("round") Integer round);
+
+    @Update("UPDATE selection_round SET status = 'CLOSED', closed_at = NOW() WHERE round_no = #{round}")
+    int closeRound(@Param("round") Integer round);
+
+    @Update("UPDATE selection_round SET status = 'OPEN', opened_at = NOW() WHERE round_no = #{round}")
+    int openRound(@Param("round") Integer round);
+
+    @Select("SELECT COUNT(*) FROM stage WHERE round_no = #{round}")
+    int countStages(@Param("round") Integer round);
+
+    /** 新一轮的阶段先照抄上一轮，再由管理员在 /admin/stages 里逐个改时间 */
+    @Insert("""
+            INSERT INTO stage (round_no, stage_no, name, start_at, end_at, description, is_open)
+            SELECT #{round}, stage_no, name, start_at, end_at, description, is_open
+              FROM stage WHERE round_no = #{prevRound}
+            """)
+    int copyStages(@Param("round") Integer round, @Param("prevRound") Integer prevRound);
+
+    // ---------------- 公示异议 ----------------
+
+    @Update("UPDATE publicity SET objection_count = objection_count + 1 WHERE id = #{id}")
+    int addObjection(@Param("id") Long id);
+
+    @Update("UPDATE publicity SET objection_count = 0 WHERE id = #{id}")
+    int clearObjections(@Param("id") Long id);
 }

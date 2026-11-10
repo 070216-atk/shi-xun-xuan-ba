@@ -215,6 +215,56 @@ public class AdminService {
         adminMapper.updatePublicity(last.id, "ENDED", LocalDateTime.now());
     }
 
+    // ---------------- 补录轮次 ----------------
+
+    /**
+     * 开启下一轮补录。
+     * 会把上一轮置为 CLOSED，并把上一轮的阶段时间窗复制一份给新一轮
+     * （管理员随后在 /admin/stages 里改成本轮的真实时间）。
+     */
+    @Transactional
+    public void openRound(Long adminId, Integer round) {
+        requireAdmin(adminId);
+        if (round == null || round < 2 || round > 3) {
+            throw new BizException(2011, "只能开启第 2 轮或第 3 轮补录");
+        }
+        String prevStatus = adminMapper.roundStatus(round - 1);
+        if (prevStatus == null) {
+            throw new BizException(2011, "第 " + (round - 1) + " 轮不存在");
+        }
+        if ("OPEN".equals(prevStatus)) {
+            adminMapper.closeRound(round - 1);
+        }
+        if (adminMapper.countStages(round) == 0) {
+            adminMapper.copyStages(round, round - 1);
+        }
+        adminMapper.openRound(round);
+    }
+
+    // ---------------- 公示异议 ----------------
+
+    public void addObjection(Long adminId, Integer round, String reason) {
+        requireAdmin(adminId);
+        Publicity p = adminMapper.latestPublicity(round);
+        if (p == null || !"PUBLISHED".equals(p.status)) {
+            throw new BizException(2010, "当前没有进行中的公示");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BizException(2012, "异议内容不能为空");
+        }
+        adminMapper.addObjection(p.id);
+    }
+
+    /** 处理完异议后清零，清零之后才允许结束公示 */
+    public void resolveObjections(Long adminId, Integer round) {
+        requireAdmin(adminId);
+        Publicity p = adminMapper.latestPublicity(round);
+        if (p == null) {
+            throw new BizException(2010, "还没有公示记录");
+        }
+        adminMapper.clearObjections(p.id);
+    }
+
     // ---------------- 看板 ----------------
 
     public Map<String, Object> dashboard(Integer round) {
