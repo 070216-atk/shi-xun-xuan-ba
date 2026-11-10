@@ -6,12 +6,13 @@
 -- ============================================================
 --
 --  【关键设计决策】
---  1. 撮合粒度：意向指向 (lab_id + mentor_id)，但【名额挂在 lab 上】。
---     理由：与前端 mock（lab.quota）、接口 /student/offers/{labId}/confirm 保持一致。
---     若日后要按导师分名额，只需给 mentor 加 quota 字段，不影响现有表。
---  2. offer 表有唯一键 (student_id, round, lab_id)：
---     保证"一个学生一轮内每个实训室最多一个录取意向"，
---     因此 /student/offers/{labId}/confirm 用 labId 定位 offer 不会歧义。
+--  1. 撮合粒度：意向与名额都挂在【导师】上。
+--     依据：真实宣讲数据里 404 室明确"高璇 14 人、张慧斌 3 人"，
+--     说明名额是按导师分配的，不是按实训室平均分。
+--     lab.quota 只作汇总展示用，等于该室各导师名额之和。
+--  2. offer 表唯一键 (student_id, round, mentor_id)：
+--     保证"一个学生一轮内对一个导师最多一个录取意向"。
+--     接口因此改为 /student/offers/{offerId}/confirm，用 offer 主键定位，彻底避免歧义。
 --  3. 三个平行意向必须来自三个不同实训室（application_item 的唯一键约束），
 --     否则同一室多条意向会在 offer 唯一键上冲突。
 --  4. 时间窗全部存 DATETIME，判断只在服务端做（架构设计 §4.1）。
@@ -53,7 +54,7 @@ CREATE TABLE lab (
   location    VARCHAR(128)    DEFAULT NULL COMMENT '地点',
   contact     VARCHAR(128)    DEFAULT NULL COMMENT '联系人/电话',
   open_day    VARCHAR(128)    DEFAULT NULL COMMENT '开放日安排（展示文案）',
-  quota       SMALLINT        NOT NULL DEFAULT 0 COMMENT '招录名额',
+  quota       SMALLINT        NOT NULL DEFAULT 0 COMMENT '总名额（= 各导师名额之和，仅展示用）',
   status      TINYINT         NOT NULL DEFAULT 1 COMMENT '1开放 0停用',
   created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -70,6 +71,7 @@ CREATE TABLE mentor (
   name     VARCHAR(32)     NOT NULL,
   title    VARCHAR(32)     DEFAULT NULL COMMENT '职称',
   intro    VARCHAR(500)    DEFAULT NULL COMMENT '研究方向/简介',
+  quota    SMALLINT        NOT NULL DEFAULT 0 COMMENT '该导师招收名额（名额的真实归属）',
   sort_no  SMALLINT        NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   KEY idx_mentor_lab (lab_id),
@@ -159,7 +161,7 @@ CREATE TABLE application_item (
   id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   application_id BIGINT UNSIGNED NOT NULL,
   lab_id         BIGINT UNSIGNED NOT NULL,
-  mentor_id      BIGINT UNSIGNED DEFAULT NULL COMMENT '意向导师（可空表示只填室）',
+  mentor_id      BIGINT UNSIGNED NOT NULL COMMENT '意向导师（名额在导师上，因此必填）',
   sort_no        TINYINT         NOT NULL DEFAULT 1 COMMENT '1-3，仅作展示序号，不代表志愿先后',
   PRIMARY KEY (id),
   UNIQUE KEY uk_item_app_lab    (application_id, lab_id)    COMMENT '同一次填报内实训室不可重复',
@@ -201,7 +203,7 @@ CREATE TABLE offer (
   id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   student_id       BIGINT UNSIGNED NOT NULL,
   lab_id           BIGINT UNSIGNED NOT NULL,
-  mentor_id        BIGINT UNSIGNED DEFAULT NULL,
+  mentor_id        BIGINT UNSIGNED NOT NULL,
   round_no         TINYINT         NOT NULL DEFAULT 1,
   type             ENUM('ADMITTED','WAITLIST','ADJUST_CANDIDATE') NOT NULL
                    COMMENT '拟录取 / 递补 / 内部调剂候选',
@@ -213,7 +215,7 @@ CREATE TABLE offer (
   confirmed_at     DATETIME        DEFAULT NULL,
   remark           VARCHAR(255)    DEFAULT NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_offer_stu_round_lab (student_id, round_no, lab_id) COMMENT '支持按 labId 唯一定位 offer',
+  UNIQUE KEY uk_offer_stu_round_mentor (student_id, round_no, mentor_id) COMMENT '一个学生一轮内对一个导师最多一个意向',
   KEY idx_offer_lab_type (lab_id, round_no, type, rank_no),
   KEY idx_offer_student  (student_id, round_no),
   CONSTRAINT fk_offer_student FOREIGN KEY (student_id) REFERENCES sys_user (id),
