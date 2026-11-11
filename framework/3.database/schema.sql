@@ -164,7 +164,7 @@ CREATE TABLE application_item (
   mentor_id      BIGINT UNSIGNED NOT NULL COMMENT '意向导师（名额在导师上，因此必填）',
   sort_no        TINYINT         NOT NULL DEFAULT 1 COMMENT '1-3，仅作展示序号，不代表志愿先后',
   PRIMARY KEY (id),
-  UNIQUE KEY uk_item_app_lab    (application_id, lab_id)    COMMENT '同一次填报内实训室不可重复',
+  -- 只限制"同一位导师不能重复"，允许同一实训室填多位导师（3 个平行意向可以都投同一个室）
   UNIQUE KEY uk_item_app_mentor (application_id, mentor_id) COMMENT '同一次填报内导师不可重复',
   KEY idx_item_lab (lab_id),
   CONSTRAINT fk_item_app    FOREIGN KEY (application_id) REFERENCES application (id) ON DELETE CASCADE,

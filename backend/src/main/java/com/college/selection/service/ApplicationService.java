@@ -71,17 +71,15 @@ public class ApplicationService {
         }
 
         // 4. 去重 + 导师校验
+        //    只限制"同一位导师不能重复"；同一实训室填多位导师是允许的
+        //    （例如 3 个平行意向都投 404 室的高璇、张慧斌、王鹏帆）
         Set<Long> mentorIds = new HashSet<>();
-        Set<Long> labIds = new HashSet<>();
         for (ApplicationReq.Item item : items) {
             if (item == null || item.labId == null || item.mentorId == null) {
                 throw new BizException(ErrorCode.TOO_MANY_INTENTS, "每个意向都要同时指定实训室和导师");
             }
             if (!mentorIds.add(item.mentorId)) {
                 throw new BizException(ErrorCode.TOO_MANY_INTENTS, "同一位导师不能重复填报");
-            }
-            if (!labIds.add(item.labId)) {
-                throw new BizException(ErrorCode.TOO_MANY_INTENTS, "同一个实训室只能填报一位导师");
             }
             Mentor mentor = mentorMapper.findById(item.mentorId);
             if (mentor == null) {

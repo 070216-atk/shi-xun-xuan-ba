@@ -13,7 +13,8 @@ import java.util.List;
 public interface TeacherMapper {
 
     /**
-     * 本实训室的报名学生。
+     * 本实训室的报名学生，**一个学生一行**。
+     * 因为允许同一实训室填多位导师，所以这里按学生分组，把意向导师合并成一个字符串。
      * 不管名额满不满，只要报了本室就必须出现在这里（PRD R4：全员面试）。
      */
     @Select("""
@@ -21,16 +22,16 @@ public interface TeacherMapper {
                    u.code          AS code,
                    u.real_name     AS real_name,
                    u.class_name    AS class_name,
-                   ai.mentor_id    AS mentor_id,
-                   m.name          AS mentor_name,
+                   MIN(ai.mentor_id) AS mentor_id,
+                   GROUP_CONCAT(m.name ORDER BY m.sort_no SEPARATOR '、') AS mentor_name,
                    a.adjust_in_lab AS adjust_in_lab,
                    a.adjust_cross  AS adjust_cross,
-                   s.score_attitude AS score_attitude,
-                   s.score_logic    AS score_logic,
-                   s.score_coding   AS score_coding,
-                   s.score_time     AS score_time,
-                   s.total          AS score_total,
-                   s.comment        AS score_comment
+                   MAX(s.score_attitude) AS score_attitude,
+                   MAX(s.score_logic)    AS score_logic,
+                   MAX(s.score_coding)   AS score_coding,
+                   MAX(s.score_time)     AS score_time,
+                   MAX(s.total)          AS score_total,
+                   MAX(s.comment)        AS score_comment
               FROM application a
               JOIN application_item ai ON ai.application_id = a.id
               JOIN sys_user u          ON u.id = a.student_id
@@ -40,7 +41,8 @@ public interface TeacherMapper {
              WHERE a.round_no = #{round}
                AND a.status   = 'SUBMITTED'
                AND ai.lab_id  = #{labId}
-             ORDER BY m.sort_no, u.code
+             GROUP BY u.id, u.code, u.real_name, u.class_name, a.adjust_in_lab, a.adjust_cross
+             ORDER BY u.code
             """)
     List<ApplicantVO> findApplicants(@Param("labId") Long labId, @Param("round") Integer round);
 
