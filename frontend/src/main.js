@@ -5,11 +5,16 @@ import 'element-plus/dist/index.css'
 import App from './App.vue'
 import router from './router'
 import './style.css'
-import { loadPublic } from './store'
+import { loadPublic, restoreSession } from './store'
 
 const app = createApp(App).use(router).use(ElementPlus, { locale: zhCn })
 
-// 先把公开数据（实训室、阶段）拉下来；后端没启动也不阻塞页面渲染
-loadPublic()
-  .catch(() => {})
-  .finally(() => app.mount('#app'))
+async function bootstrap() {
+  // 1. 如果本地有 token，先用 /auth/me 恢复登录态（刷新页面不掉登录）
+  await restoreSession().catch(() => {})
+  // 2. 拉公开数据（实训室、阶段）；后端没启动也不阻塞渲染
+  await loadPublic().catch(() => {})
+  app.mount('#app')
+}
+
+bootstrap()

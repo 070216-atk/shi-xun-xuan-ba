@@ -23,12 +23,23 @@ public class AuthService {
         this.jwtUtil = jwtUtil;
     }
 
-    public LoginResp login(String username, String rawPassword) {
+    public LoginResp login(String username, String rawPassword, String portal) {
         SysUser u = userMapper.findByUsername(username);
         // 用户不存在和密码错误返回同一个错误，避免被用来探测账号是否存在
         if (u == null || !encoder.matches(rawPassword, u.passwordHash)) {
             throw new BizException(ErrorCode.BAD_CREDENTIALS, "用户名或密码错误");
         }
+
+        // 入口校验：管理员只能走管理后台，非管理员不能走管理后台
+        boolean isAdmin = "ADMIN".equals(u.role);
+        boolean adminPortal = "admin".equalsIgnoreCase(portal);
+        if (adminPortal && !isAdmin) {
+            throw new BizException(ErrorCode.NO_PERMISSION, "该账号不是管理员，请从统一登录入口进入");
+        }
+        if (!adminPortal && isAdmin) {
+            throw new BizException(ErrorCode.NO_PERMISSION, "管理员账号请从管理后台入口登录");
+        }
+
         LoginResp resp = new LoginResp();
         resp.token = jwtUtil.issue(u.id, u.role, u.username);
         resp.expiresIn = jwtUtil.getExpireSeconds();

@@ -21,7 +21,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public Result<LoginResp> login(@Valid @RequestBody LoginReq req) {
-        return Result.ok(authService.login(req.username, req.password));
+        return Result.ok(authService.login(req.username, req.password, req.portal));
     }
 
     @GetMapping("/me")

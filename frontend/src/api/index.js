@@ -6,8 +6,8 @@ import { http, setToken, clearToken } from './http'
 
 // ---------------- 认证 ----------------
 
-export async function login(username, password) {
-  const data = await http.post('/auth/login', { username, password })
+export async function login(username, password, portal = 'web') {
+  const data = await http.post('/auth/login', { username, password, portal })
   setToken(data.token)
   return data // { token, expiresIn, user }
 }

@@ -7,7 +7,7 @@
  */
 import { reactive } from 'vue'
 import * as api from './api'
-import { clearToken } from './api/http'
+import { clearToken, getToken } from './api/http'
 
 export const store = reactive({
   user: null,
@@ -115,31 +115,47 @@ export function remainingQuota(labId) {
 
 // ---------------- 登录 ----------------
 
-export async function login(username, password, expectedRole) {
-  let data
-  try {
-    data = await api.login(username, password)
-  } catch (e) {
-    return 'fail'
-  }
-  const u = data.user
-  const role = (u.role || '').toLowerCase()
-  if (expectedRole && role !== expectedRole) {
-    clearToken()
-    return 'mismatch'
-  }
-  store.user = {
+function toUser(u) {
+  return {
     id: u.code,          // 页面用学号当 key
     code: u.code,
     name: u.realName,
-    role,
+    role: (u.role || '').toLowerCase(),
     username: u.username,
     dbId: u.id,
     labId: u.labId,
     mentorId: u.mentorId,
     className: u.className
   }
+}
+
+/**
+ * 登录。portal = 'web'（学生/导师统一入口）或 'admin'（管理后台）
+ * 返回：'ok' | 'fail'（账号密码错）| 'forbidden'（走错入口）
+ */
+export async function login(username, password, portal = 'web') {
+  let data
+  try {
+    data = await api.login(username, password, portal)
+  } catch (e) {
+    if (e.code === 1003) return 'forbidden'
+    return 'fail'
+  }
+  store.user = toUser(data.user)
   return 'ok'
+}
+
+/** 刷新页面后用本地 token 恢复登录态 */
+export async function restoreSession() {
+  if (!getToken()) return null
+  try {
+    const u = await api.me()
+    store.user = toUser(u)
+    return store.user
+  } catch (e) {
+    clearToken()
+    return null
+  }
 }
 
 export function logout() {
@@ -151,6 +167,9 @@ export function logout() {
   store.labLists = {}
   store.finalResults = {}
   store.quotas = []
+  store.applicants = []
+  store.results = []
+  store.pool = { vacancies: [], candidates: [] }
 }
 
 // ---------------- 学生端 ----------------

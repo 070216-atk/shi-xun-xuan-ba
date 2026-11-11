@@ -2,7 +2,9 @@
   <div>
     <header class="topbar">
       <div class="topbar-inner">
-        <router-link to="/" class="brand">实训室进组选拔系统</router-link>
+        <router-link to="/" class="brand">
+          {{ store.user?.role === 'admin' ? '实训室进组选拔系统 · 管理后台' : '实训室进组选拔系统' }}
+        </router-link>
         <div class="user-area">
           <template v-if="store.user">
             <el-badge :is-dot="unread > 0" class="bell">
@@ -11,11 +13,14 @@
             <span class="uname">{{ store.user.name }}（{{ roleName }}）</span>
             <el-button size="small" @click="onLogout">退出</el-button>
           </template>
-          <router-link v-else to="/login"><el-button size="small" type="warning">登录</el-button></router-link>
+          <router-link v-else :to="isAdminArea ? '/admin/login' : '/login'">
+            <el-button size="small" type="warning">登录</el-button>
+          </router-link>
         </div>
       </div>
       <nav class="nav">
-        <router-link v-for="m in menus" :key="m.path" :to="m.path" class="nav-item" active-class="active" exact-active-class="active">{{ m.label }}</router-link>
+        <router-link v-for="m in menus" :key="m.path" :to="m.path" class="nav-item"
+          active-class="active" exact-active-class="active">{{ m.label }}</router-link>
       </nav>
     </header>
     <main class="page">
@@ -33,13 +38,15 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { store, logout } from '../store'
 
 const router = useRouter()
+const route = useRoute()
 const showNotif = ref(false)
 const unread = computed(() => store.notifications.filter(n => !n.read).length)
 const roleName = computed(() => ({ student: '学生', teacher: '导师', admin: '学院管理员' }[store.user?.role] || ''))
+const isAdminArea = computed(() => route.path.startsWith('/admin'))
 
 const publicMenus = [
   { path: '/', label: '首页' },
@@ -64,11 +71,16 @@ const roleMenus = {
     { path: '/admin/dashboard', label: '数据看板' }
   ]
 }
-const menus = computed(() => [...publicMenus, ...(roleMenus[store.user?.role] || [])])
+const menus = computed(() => {
+  const role = store.user?.role
+  // 管理员只看到后台菜单，学生/导师看到公开 + 自己的菜单
+  return role === 'admin' ? roleMenus.admin : [...publicMenus, ...(roleMenus[role] || [])]
+})
 
 function onLogout() {
+  const wasAdmin = store.user?.role === 'admin'
   logout()
-  router.push('/login')
+  router.push(wasAdmin ? '/admin/login' : '/login')
 }
 </script>
 
