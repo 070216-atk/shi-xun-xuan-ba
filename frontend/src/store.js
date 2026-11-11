@@ -28,6 +28,7 @@ export const store = reactive({
   applicants: [],     // 导师端：本室报名学生（后端原样）
   pool: { vacancies: [], candidates: [] },
   results: [],        // 管理端：已确认的最终名单
+  publicityList: [],  // 公示名单（公开接口）
   dashboard: {}
 })
 
@@ -382,9 +383,11 @@ export async function doAdjust(level, mentorId, studentCodes, conclusion) {
 }
 
 export async function switchStage(stageNo, hours = 4) {
-  // 后端会先把本轮其他阶段全部关掉，再打开目标阶段，避免多个阶段同时开放
-  await api.switchStage({ round: store.round, stageNo, hours })
+  // 后端会先把本轮其他阶段全部关掉，再打开目标阶段，避免多个阶段同时开放；
+  // 切到「拟录取与学生确认」时后端还会顺便结算（1 个意向自动确认，多个等学生选）
+  const r = await api.switchStage({ round: store.round, stageNo, hours })
   await loadPublic()
+  return r
 }
 
 export async function openNextRound() {
@@ -396,6 +399,25 @@ export async function openNextRound() {
 export async function publishPublicity() {
   const p = await api.publishPublicity({ round: store.round, days: 1 })
   store.publicity = { published: true, start: fmt(p.startAt), ended: false }
+  return p
+}
+
+/** 公布剩余名额（后端会写一条操作日志） */
+export async function publishQuotas() {
+  const r = await api.publishQuotas(store.round)
+  await loadAdmin()
+  return r
+}
+
+/** 公示状态 + 名单（公开接口，学生也能看） */
+export async function loadPublicity() {
+  const p = await api.getPublicPublicity(store.round)
+  if (p) {
+    store.publicity = { published: true, start: fmt(p.startAt), ended: p.status === 'ENDED' }
+    store.publicityList = p.list || []
+  } else {
+    store.publicityList = []
+  }
   return p
 }
 

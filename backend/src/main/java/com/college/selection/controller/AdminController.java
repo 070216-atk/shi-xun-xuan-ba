@@ -32,6 +32,15 @@ public class AdminController {
         return Result.ok(adminService.quotas(round));
     }
 
+    /** 公布剩余名额（汇总 + 写操作日志） */
+    @PostMapping("/quotas/publish")
+    public Result<Map<String, Object>> publishQuotas(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestBody(required = false) AdjustReq req) {
+        int round = (req == null || req.round == null) ? 1 : req.round;
+        return Result.ok(adminService.publishQuotas(userId, round));
+    }
+
     @GetMapping("/stages")
     public Result<List<Stage>> stages(@RequestParam(defaultValue = "1") Integer round) {
         return Result.ok(adminService.stages(round));
@@ -46,13 +55,20 @@ public class AdminController {
         return Result.ok(null);
     }
 
-    /** 切换当前阶段（会关闭本轮其他阶段，保证同一时刻只有一个阶段是"当前"） */
+    /** 切换当前阶段（会关闭本轮其他阶段；切到阶段5时会自动结算拟录取） */
     @PostMapping("/stages/switch")
-    public Result<Void> switchStage(
+    public Result<Map<String, Object>> switchStage(
             @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
             @RequestBody SwitchStageReq req) {
-        adminService.switchStage(userId, req.round == null ? 1 : req.round, req.stageNo, req.hours);
-        return Result.ok(null);
+        return Result.ok(adminService.switchStage(userId, req.round == null ? 1 : req.round, req.stageNo, req.hours));
+    }
+
+    /** 手动重新结算拟录取（1 个意向自动确认，多个等学生选择） */
+    @PostMapping("/settle")
+    public Result<Map<String, Object>> settle(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(adminService.settle(userId, round));
     }
 
     /** 调剂池：空位 + 待安置学生 */

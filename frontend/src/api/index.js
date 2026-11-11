@@ -24,6 +24,8 @@ export const me = () => http.get('/auth/me')
 export const getStages = (round = 1) => http.get(`/stages?round=${round}`)
 export const getLabs = (round = 1) => http.get(`/labs?round=${round}`)
 export const getLab = (id, round = 1) => http.get(`/labs/${id}?round=${round}`)
+/** 公示状态 + 最终名单（公开接口，不用登录；未公示时返回 null） */
+export const getPublicPublicity = (round = 1) => http.get(`/publicity?round=${round}`)
 
 // ---------------- 学生端 ----------------
 
@@ -47,6 +49,7 @@ export const saveTeacherLists = (body) => http.put('/teacher/lists', body)
 // ---------------- 管理端 ----------------
 
 export const getQuotas = (round = 1) => http.get(`/admin/quotas?round=${round}`)
+export const publishQuotas = (round = 1) => http.post('/admin/quotas/publish', { round })
 export const getAdminStages = (round = 1) => http.get(`/admin/stages?round=${round}`)
 export const updateStage = (id, body) => http.put(`/admin/stages/${id}`, body)
 export const switchStage = (body) => http.post('/admin/stages/switch', body)

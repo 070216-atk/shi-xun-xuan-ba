@@ -34,21 +34,25 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { store, loadAdmin, openNextRound } from '../../store'
+import { store, loadAdmin, openNextRound, publishQuotas } from '../../store'
 
 const rows = computed(() => store.quotas || [])
 
 function refresh() {
   loadAdmin().then(() => ElMessage.success('已刷新')).catch(e => ElMessage.error(e.message))
 }
-function publish() {
-  const total = rows.value.reduce((s, r) => s + (r.remaining || 0), 0)
-  store.notifications.unshift({
-    time: '刚刚',
-    text: `学院已公布剩余名额，共 ${total} 个，未录取学生可重新填报`,
-    read: false
-  })
-  ElMessage.success(`剩余名额已公布（共 ${total} 个）`)
+async function publish() {
+  try {
+    const r = await publishQuotas()
+    store.notifications.unshift({
+      time: '刚刚',
+      text: `学院已公布剩余名额，共 ${r.total} 个，未录取学生可重新填报`,
+      read: false
+    })
+    ElMessage.success(`剩余名额已公布（共 ${r.total} 个），已写入操作日志`)
+  } catch (e) {
+    ElMessage.error(e.message || '公布失败')
+  }
 }
 async function openRound() {
   try {

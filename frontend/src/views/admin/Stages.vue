@@ -44,9 +44,15 @@ async function switchTo(row) {
     )
   } catch { return }
   try {
-    await switchStage(row.id)
+    const r = await switchStage(row.id)
     store.notifications.unshift({ time: '刚刚', text: `阶段已切换：${row.name}`, read: false })
-    ElMessage.success(`已切换到「${row.name}」`)
+    if (r && r.autoConfirmed != null) {
+      ElMessage.success(
+        `已切到「${row.name}」：自动确认 ${r.autoConfirmed} 人，${r.multiChoice} 人需自主选择去向`
+      )
+    } else {
+      ElMessage.success(`已切换到「${row.name}」`)
+    }
   } catch (e) {
     ElMessage.error(e.message || '切换失败')
   }

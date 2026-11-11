@@ -163,6 +163,13 @@ public interface AdminMapper {
     @Select("SELECT COUNT(*) FROM offer WHERE round_no = #{round} AND type = 'ADJUST_CANDIDATE'")
     int countAdjustCandidates(@Param("round") Integer round);
 
+    /** 结算时用：本轮还有"已下发未确认"拟录取意向的学生 */
+    @Select("""
+            SELECT DISTINCT student_id FROM offer
+             WHERE round_no = #{round} AND type = 'ADMITTED' AND status = 'ISSUED'
+            """)
+    java.util.List<Long> studentsWithIssuedAdmitted(@Param("round") Integer round);
+
     // ---------------- 补录轮次 ----------------
 
     @Select("SELECT status FROM selection_round WHERE round_no = #{round}")

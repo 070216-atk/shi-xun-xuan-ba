@@ -118,7 +118,31 @@ public interface OfferMapper {
             """)
     int countAnyConfirmed(@Param("studentId") Long studentId, @Param("round") Integer round);
 
+    /** 该导师本轮已确认的学生（用于拦住"把已确认学生从名单里删掉"） */
+    @Select("""
+            SELECT student_id FROM offer
+             WHERE mentor_id = #{mentorId} AND round_no = #{round} AND status = 'CONFIRMED'
+            """)
+    List<Long> findConfirmedStudentIds(@Param("mentorId") Long mentorId, @Param("round") Integer round);
+
+    /** 结算时把本轮"已下发未确认"的拟录取截止时间统一刷新 */
+    @Update("""
+            UPDATE offer
+               SET confirm_deadline = #{deadline}
+             WHERE round_no = #{round} AND type = 'ADMITTED' AND status = 'ISSUED'
+            """)
+    int refreshIssuedDeadline(@Param("round") Integer round, @Param("deadline") LocalDateTime deadline);
+
     /** 自动确认（只有 1 个拟录取意向时） */
     @Update("UPDATE offer SET status = 'CONFIRMED', confirmed_at = NOW() WHERE id = #{id} AND status = 'ISSUED'")
     int autoConfirm(@Param("id") Long id);
+
+    /** 结算时用：把某个学生本轮唯一的那条拟录取意向直接确认 */
+    @Update("""
+            UPDATE offer
+               SET status = 'CONFIRMED', confirmed_at = NOW()
+             WHERE student_id = #{studentId} AND round_no = #{round}
+               AND type = 'ADMITTED' AND status = 'ISSUED'
+            """)
+    int autoConfirmByStudent(@Param("studentId") Long studentId, @Param("round") Integer round);
 }

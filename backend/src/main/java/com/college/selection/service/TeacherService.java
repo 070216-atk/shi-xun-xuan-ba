@@ -130,6 +130,14 @@ public class TeacherService {
         LocalDateTime deadline = stageService.getEndAt(round, STAGE_CONFIRM);
         LocalDateTime now = LocalDateTime.now();
 
+        // 已经确认了本导师的学生，不能被悄悄从名单里移除（否则学生状态会莫名回退）
+        for (Long sid : offerMapper.findConfirmedStudentIds(t.mentorId, round)) {
+            if (!admitted.contains(sid)) {
+                throw new BizException(2007,
+                        who(sid) + " 已经确认了你的录取意向，不能直接移出名单；如需撤销请联系学院管理员");
+            }
+        }
+
         offerMapper.deleteByMentor(t.mentorId, round);
 
         List<Long> allStudents = new ArrayList<>();
@@ -158,12 +166,10 @@ public class TeacherService {
             inserted.add(insert(t, round, adjust.get(i), "ADJUST_CANDIDATE", i + 1, now, deadline));
         }
 
-        // 只有 1 个拟录取意向的学生自动确认
-        for (Offer o : inserted) {
-            if ("ADMITTED".equals(o.type) && offerMapper.countAdmittedIssued(o.studentId, round) == 1) {
-                offerMapper.autoConfirm(o.id);
-            }
-        }
+        // 注意：这里【不做】自动确认。
+        // 面试阶段导师是并行提交名单的，如果一发就确认，第一个发名单的导师会把学生锁死，
+        // "收到 2 个以上意向由学生自主选择"就永远不会发生。
+        // 统一确认放到进入「拟录取与学生确认」阶段时由 AdminService.settle 批量结算。
     }
 
     /** 把数字 id 换成人看得懂的名字，别在报错里甩 ID */

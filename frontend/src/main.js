@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
@@ -8,6 +8,15 @@ import './style.css'
 import { loadPublic, restoreSession } from './store'
 
 const app = createApp(App).use(router).use(ElementPlus, { locale: zhCn })
+
+// 全局兜底：组件里没接住的异常，也不要让页面静默白屏
+app.config.errorHandler = (err, instance, info) => {
+  console.error('[Vue error]', info, err)
+  ElMessage.error('页面出错了：' + (err?.message || err) + '（详见控制台）')
+}
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[unhandled promise]', e.reason)
+})
 
 async function bootstrap() {
   // 1. 如果本地有 token，先用 /auth/me 恢复登录态（刷新页面不掉登录）
@@ -18,3 +27,4 @@ async function bootstrap() {
 }
 
 bootstrap()
+

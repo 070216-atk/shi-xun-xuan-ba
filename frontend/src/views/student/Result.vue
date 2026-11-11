@@ -1,6 +1,7 @@
 <template>
   <div>
     <div class="page-title">录取结果</div>
+
     <div class="card" style="text-align:center">
       <template v-if="finalLab">
         <el-result :icon="store.publicity.ended ? 'success' : 'info'"
@@ -20,14 +21,26 @@
       <div class="page-title">我的意向与状态</div>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="当前状态">{{ status || '未登录' }}</el-descriptions-item>
-        <el-descriptions-item label="第 {{ store.round }} 轮填报">
+        <el-descriptions-item :label="`第 ${store.round} 轮填报`">
           {{ app ? `${app.labIds.length} 个意向（${app.time}）` : '尚未填报' }}
         </el-descriptions-item>
         <el-descriptions-item label="收到的意向数">{{ (store.offers[store.user?.id] || []).length }}</el-descriptions-item>
       </el-descriptions>
-      <p class="muted" style="margin-top:10px">
-        公示期间如需提出异议，请线下联系学院教务；系统按学院汇总的最终名单为准。
+    </div>
+
+    <div v-if="store.publicity.published" class="card">
+      <div class="page-title">公示名单</div>
+      <p class="muted">
+        共 {{ store.publicityList.length }} 人。
+        {{ store.publicity.ended ? '公示已结束，名单已生效。' : '公示期 1 天，如有异议请线下联系学院教务。' }}
       </p>
+      <el-table :data="store.publicityList" size="small" max-height="400">
+        <el-table-column prop="code" label="学号" width="110" />
+        <el-table-column prop="realName" label="姓名" width="90" />
+        <el-table-column prop="className" label="班级" width="110" />
+        <el-table-column prop="labName" label="录取实训室" min-width="160" />
+        <el-table-column prop="mentorName" label="导师" width="110" />
+      </el-table>
     </div>
   </div>
 </template>
@@ -35,10 +48,13 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { store, labById, studentStatus, loadStudent } from '../../store'
+import { store, labById, studentStatus, loadStudent, loadPublicity } from '../../store'
 
 onMounted(() => {
-  if (store.user?.role === 'student') loadStudent().catch(e => ElMessage.error(e.message))
+  if (store.user?.role === 'student') {
+    loadStudent().catch(e => ElMessage.error(e.message))
+  }
+  loadPublicity().catch(() => {})
 })
 
 const finalLab = computed(() => {

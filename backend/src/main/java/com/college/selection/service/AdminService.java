@@ -12,6 +12,7 @@ import com.college.selection.entity.SysUser;
 import com.college.selection.mapper.AdminMapper;
 import com.college.selection.mapper.MentorMapper;
 import com.college.selection.mapper.OfferMapper;
+import com.college.selection.mapper.OperationLogMapper;
 import com.college.selection.mapper.SysUserMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,23 +27,28 @@ public class AdminService {
 
     /** 统筹调剂对应流程图第 7 个环节 */
     private static final int STAGE_ADJUST = 7;
+    /** 拟录取与学生确认对应第 5 个环节 */
+    private static final int STAGE_CONFIRM = 5;
 
     private final AdminMapper adminMapper;
     private final OfferMapper offerMapper;
     private final MentorMapper mentorMapper;
     private final SysUserMapper userMapper;
     private final StageService stageService;
+    private final OperationLogMapper logMapper;
 
     public AdminService(AdminMapper adminMapper,
                         OfferMapper offerMapper,
                         MentorMapper mentorMapper,
                         SysUserMapper userMapper,
-                        StageService stageService) {
+                        StageService stageService,
+                        OperationLogMapper logMapper) {
         this.adminMapper = adminMapper;
         this.offerMapper = offerMapper;
         this.mentorMapper = mentorMapper;
         this.userMapper = userMapper;
         this.stageService = stageService;
+        this.logMapper = logMapper;
     }
 
     private SysUser requireAdmin(Long adminId) {
@@ -63,8 +69,30 @@ public class AdminService {
         return list;
     }
 
-    // ---------------- 调剂池 ----------------
+    /**
+     * 公布剩余名额。
+     * 真正做的事：把当前剩余名额汇总出来 + 写一条操作日志（留痕），
+     * 前端拿到总数后提示学生。补录本身仍然靠"开启下一轮"。
+     */
+    @Transactional
+    public Map<String, Object> publishQuotas(Long adminId, Integer round) {
+        requireAdmin(adminId);
+        List<QuotaVO> qs = quotas(round);
+        int total = 0;
+        for (QuotaVO q : qs) {
+            total += (q.remaining == null ? 0 : q.remaining);
+        }
+        String remark = String.format("公布第 %d 轮剩余名额，共 %d 个", round, total);
+        logMapper.insert(adminId, "ADMIN", "PUBLISH_QUOTA", "ROUND", round.longValue(), remark);
 
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("round", round);
+        m.put("total", total);
+        m.put("labs", qs);
+        return m;
+    }
+
+    // ---------------- 调剂池 ----------------
     public AdjustPoolVO pool(Integer round) {
         AdjustPoolVO vo = new AdjustPoolVO();
         vo.round = round;
@@ -191,7 +219,7 @@ public class AdminService {
      * 导致 currentStage 语义模糊（管理员以为切到了阶段 5，学生端还认为在阶段 3 能填报）。
      */
     @Transactional
-    public void switchStage(Long adminId, Integer round, Integer stageNo, Integer hours) {
+    public Map<String, Object> switchStage(Long adminId, Integer round, Integer stageNo, Integer hours) {
         requireAdmin(adminId);
         if (stageNo == null) {
             throw new BizException(2009, "必须指定要切换到的阶段");
@@ -200,6 +228,55 @@ public class AdminService {
         LocalDateTime now = LocalDateTime.now();
         adminMapper.closeAllStages(round, now);
         adminMapper.openStage(round, stageNo, now.minusHours(1), now.plusHours(h));
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("stageNo", stageNo);
+        // 进入"拟录取与学生确认"时统一结算：1 个意向自动确认，多个等学生自己选
+        if (stageNo == STAGE_CONFIRM) {
+            m.putAll(settleOffers(round));
+        }
+        return m;
+    }
+
+    /**
+     * 面试结束后统一结算。
+     *
+     * 为什么不放在导师提交名单时：导师是并行提交的，
+     * 如果一发就自动确认，第一个发名单的导师会把学生锁死，
+     * "收到 2 个以上意向由学生自主选择"就永远不会发生。
+     * 所以放到进入确认阶段时统一处理。
+     */
+    @Transactional
+    public Map<String, Object> settle(Long adminId, Integer round) {
+        requireAdmin(adminId);
+        return settleOffers(round);
+    }
+
+    private Map<String, Object> settleOffers(Integer round) {
+        // 先按阶段 5 的真实窗口刷新确认截止时间（发名单时阶段 5 可能还没配置）
+        LocalDateTime confirmEnd = stageService.getEndAt(round, STAGE_CONFIRM);
+        if (confirmEnd != null) {
+            offerMapper.refreshIssuedDeadline(round, confirmEnd);
+        }
+
+        List<Long> sids = adminMapper.studentsWithIssuedAdmitted(round);
+        int auto = 0, multi = 0;
+        for (Long sid : sids) {
+            int cnt = offerMapper.countAdmittedIssued(sid, round);
+            if (cnt == 1) {
+                offerMapper.autoConfirmByStudent(sid, round);
+                auto++;
+            } else if (cnt >= 2) {
+                multi++;
+            }
+        }
+        String remark = String.format("结算第 %d 轮：自动确认 %d 人，多意向待学生选择 %d 人", round, auto, multi);
+        logMapper.insert(null, "SYSTEM", "SETTLE_OFFERS", "ROUND", round.longValue(), remark);
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("autoConfirmed", auto);
+        m.put("multiChoice", multi);
+        return m;
     }
 
     // ---------------- 公示 ----------------

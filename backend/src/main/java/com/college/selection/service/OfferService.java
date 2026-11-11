@@ -16,10 +16,15 @@ import java.util.Map;
 @Service
 public class OfferService {
 
-    private final OfferMapper offerMapper;
+    /** 拟录取与学生确认对应流程图第 5 个环节 */
+    private static final int STAGE_CONFIRM = 5;
 
-    public OfferService(OfferMapper offerMapper) {
+    private final OfferMapper offerMapper;
+    private final StageService stageService;
+
+    public OfferService(OfferMapper offerMapper, StageService stageService) {
         this.offerMapper = offerMapper;
+        this.stageService = stageService;
     }
 
     /** 本人某轮的全部意向，按 拟录取 → 递补 → 调剂候选 排序 */
@@ -60,10 +65,9 @@ public class OfferService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        if (offer.confirmDeadline != null && now.isAfter(offer.confirmDeadline)) {
-            offerMapper.updateStatus(offer.id, "EXPIRED", null);
-            throw new BizException(2006, "已超过确认截止时间，视为放弃");
-        }
+        // 确认窗口以"阶段 5 当前是否开放"为准。
+        // 不用 offer.confirm_deadline 判断：那个值是发名单时算的，那时阶段 5 可能还没配置。
+        stageService.assertOpen(offer.roundNo, STAGE_CONFIRM);
 
         Integer quota = offerMapper.lockMentorQuota(offer.mentorId);
         int confirmed = offerMapper.countConfirmed(offer.mentorId, offer.roundNo);
