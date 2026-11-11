@@ -42,7 +42,9 @@ export async function request(method, url, body) {
     })
   } catch (e) {
     // 后端没启动、或代理没配好
-    throw new Error('连不上后端（请确认后端已在 8080 启动）')
+    const err = new Error('连不上后端：请先双击「启动后端.cmd」，确认 8080 已在运行')
+    err.code = 'NETWORK'
+    throw err
   }
 
   let json

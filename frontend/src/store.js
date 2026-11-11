@@ -132,6 +132,7 @@ function toUser(u) {
 /**
  * 登录。portal = 'web'（学生/导师统一入口）或 'admin'（管理后台）
  * 返回：'ok' | 'fail'（账号密码错）| 'forbidden'（走错入口）
+ * 网络错误（后端没启动等）会直接抛出，由页面显示具体原因，不要伪装成密码错误
  */
 export async function login(username, password, portal = 'web') {
   let data
@@ -139,7 +140,8 @@ export async function login(username, password, portal = 'web') {
     data = await api.login(username, password, portal)
   } catch (e) {
     if (e.code === 1003) return 'forbidden'
-    return 'fail'
+    if (e.code === 1002) return 'fail'
+    throw e
   }
   store.user = toUser(data.user)
   return 'ok'
