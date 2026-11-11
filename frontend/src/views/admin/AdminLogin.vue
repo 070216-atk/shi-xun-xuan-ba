@@ -22,14 +22,28 @@
         </el-button>
       </el-form>
 
-      <el-alert type="info" :closable="false" style="margin-top:16px"
+      <el-alert type="info" :closable="false" style="margin-top:16px;margin-bottom:0"
         title="本入口仅限学院管理员；学生与导师请从统一登录入口进入。" />
 
-      <div class="quick">
-        <button type="button" class="quick-btn" :disabled="loading" @click="quickLogin">
-          快捷登录：学院管理员
+      <div class="acct">
+        <button type="button" class="acct-toggle" @click="open = !open">
+          <span>已有账号</span>
+          <span class="arrow" :class="{ open }">▾</span>
         </button>
-        <p class="quick-note">演示环境，一键以管理员身份进入</p>
+
+        <el-collapse-transition>
+          <div v-show="open">
+            <div class="acct-list">
+              <button type="button" class="acct-row" :disabled="loading" @click="quickLogin">
+                <span class="pill">管理员</span>
+                <span class="who">学院管理员</span>
+                <span class="acc">admin</span>
+                <span class="go">→</span>
+              </button>
+            </div>
+            <p class="acct-note">演示环境，点击直接进入</p>
+          </div>
+        </el-collapse-transition>
       </div>
 
       <div class="foot">
@@ -49,6 +63,7 @@ const router = useRouter()
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
+const open = ref(false)
 
 function quickLogin() {
   username.value = 'admin'
@@ -93,15 +108,39 @@ async function onLogin() {
 .admin-card h2 { color: #e2e8f0; font-size: 18px; margin: 0; }
 .admin-card .muted { color: #94a3b8; font-size: 12px; margin: 4px 0 0; }
 .admin-card :deep(.el-form-item__label) { color: #cbd5e1; }
-.quick { margin-top: 16px; }
-.quick-btn {
-  width: 100%; border: 1px dashed #475569; background: #24334a; color: #cbd5e1;
-  border-radius: 9px; padding: 10px; cursor: pointer; font-family: inherit; font-size: 13px;
-  transition: .15s;
+
+.acct { margin-top: 14px; }
+.acct-toggle {
+  width: 100%; display: flex; justify-content: center; align-items: center; gap: 6px;
+  border: none; background: transparent; color: #64748b; font-size: 13px;
+  cursor: pointer; font-family: inherit; padding: 6px 0;
 }
-.quick-btn:hover:not(:disabled) { border-color: #38bdf8; color: #e2e8f0; background: #2b3d57; }
-.quick-btn:disabled { opacity: .6; cursor: not-allowed; }
-.quick-note { text-align: center; font-size: 11px; color: #64748b; margin: 8px 0 0; }
+.acct-toggle:hover { color: #38bdf8; }
+.arrow { display: inline-block; transition: transform .2s; font-size: 11px; }
+.arrow.open { transform: rotate(180deg); }
+
+.acct-list {
+  margin-top: 6px; border: 1px solid #334155; border-radius: 10px;
+  max-height: 196px; overflow-y: auto;
+}
+.acct-list::-webkit-scrollbar { width: 6px; }
+.acct-list::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+
+.acct-row {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 10px 12px; background: #24334a; border: none;
+  border-bottom: 1px solid #334155; cursor: pointer; font-family: inherit;
+  text-align: left; transition: background .15s;
+}
+.acct-row:last-child { border-bottom: none; }
+.acct-row:hover:not(:disabled) { background: #2b3d57; }
+.acct-row:disabled { opacity: .6; cursor: not-allowed; }
+.pill { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: #134e4a; color: #5eead4; flex-shrink: 0; }
+.who { flex: 1; font-size: 13px; color: #e2e8f0; }
+.acc { font-size: 12px; color: #64748b; }
+.go { font-size: 13px; color: #64748b; }
+.acct-note { text-align: center; font-size: 11px; color: #64748b; margin: 8px 0 0; }
+
 .foot { margin-top: 14px; text-align: center; font-size: 13px; }
 .foot a { color: #64748b; text-decoration: none; }
 .foot a:hover { color: #94a3b8; }

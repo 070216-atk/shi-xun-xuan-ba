@@ -17,16 +17,27 @@
         </el-button>
       </el-form>
 
-      <div class="quick">
-        <div class="quick-title"><span>快捷登录</span></div>
-        <div class="quick-grid">
-          <button v-for="d in quicks" :key="d.u" type="button" class="quick-btn"
-            :disabled="loading" @click="quickLogin(d)">
-            <span class="role">{{ d.role }}</span>
-            <span class="who">{{ d.who }}</span>
-          </button>
-        </div>
-        <p class="quick-note">演示环境，一键以对应身份进入</p>
+      <!-- 已有账号：默认收起，点开是一条一条的列表 -->
+      <div class="acct">
+        <button type="button" class="acct-toggle" @click="open = !open">
+          <span>已有账号</span>
+          <span class="arrow" :class="{ open }">▾</span>
+        </button>
+
+        <el-collapse-transition>
+          <div v-show="open">
+            <div class="acct-list">
+              <button v-for="d in accounts" :key="d.u" type="button" class="acct-row"
+                :disabled="loading" @click="quickLogin(d)">
+                <span class="pill" :class="d.role === '导师' ? 'teacher' : 'student'">{{ d.role }}</span>
+                <span class="who">{{ d.who }}</span>
+                <span class="acc">{{ d.u }}</span>
+                <span class="go">→</span>
+              </button>
+            </div>
+            <p class="acct-note">演示环境，点击任一账号直接进入</p>
+          </div>
+        </el-collapse-transition>
       </div>
 
       <div class="foot">
@@ -48,9 +59,9 @@ const router = useRouter()
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
+const open = ref(false)
 
-// 快捷登录：演示环境用，点一下直接以该身份进入
-const quicks = [
+const accounts = [
   { u: 'student01', role: '学生', who: '李明' },
   { u: 'student02', role: '学生', who: '王芳' },
   { u: 'teacher01', role: '导师', who: '刘冠军 · 202 室' },
@@ -94,24 +105,43 @@ async function onLogin() {
 }
 .brand-mark { text-align: center; font-size: 12px; letter-spacing: 3px; color: #1b6e5a; }
 .login-card h2 { text-align: center; color: #1e3a8a; font-size: 19px; margin: 6px 0 2px; }
-.quick { margin-top: 20px; }
-.quick-title {
-  display: flex; align-items: center; gap: 10px; color: #94a3b8; font-size: 12px;
-  margin-bottom: 12px;
+
+.acct { margin-top: 16px; }
+.acct-toggle {
+  width: 100%; display: flex; justify-content: center; align-items: center; gap: 6px;
+  border: none; background: transparent; color: #64748b; font-size: 13px;
+  cursor: pointer; font-family: inherit; padding: 6px 0;
 }
-.quick-title::before, .quick-title::after {
-  content: ''; flex: 1; height: 1px; background: #e5e9f0;
+.acct-toggle:hover { color: #1b6e5a; }
+.arrow { display: inline-block; transition: transform .2s; font-size: 11px; }
+.arrow.open { transform: rotate(180deg); }
+
+.acct-list {
+  margin-top: 6px; border: 1px solid #e2e8f0; border-radius: 10px;
+  max-height: 196px; overflow-y: auto;
 }
-.quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.quick-btn {
-  border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 9px; padding: 9px 10px;
-  cursor: pointer; text-align: left; font-family: inherit; transition: .15s;
+.acct-list::-webkit-scrollbar { width: 6px; }
+.acct-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+.acct-row {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 10px 12px; background: #fff; border: none;
+  border-bottom: 1px solid #f1f5f9; cursor: pointer; font-family: inherit;
+  text-align: left; transition: background .15s;
 }
-.quick-btn:hover:not(:disabled) { border-color: #1b6e5a; background: #ecfdf5; }
-.quick-btn:disabled { opacity: .6; cursor: not-allowed; }
-.quick-btn .role { display: block; font-size: 11px; color: #1b6e5a; font-weight: 600; }
-.quick-btn .who { display: block; font-size: 12px; color: #475569; margin-top: 2px; }
-.quick-note { text-align: center; font-size: 11px; color: #a0aec0; margin: 10px 0 0; }
+.acct-row:last-child { border-bottom: none; }
+.acct-row:hover:not(:disabled) { background: #f0fdf4; }
+.acct-row:disabled { opacity: .6; cursor: not-allowed; }
+.pill {
+  font-size: 11px; padding: 1px 7px; border-radius: 10px; flex-shrink: 0;
+}
+.pill.student { background: #dbeafe; color: #1e3a8a; }
+.pill.teacher { background: #dcfce7; color: #15803d; }
+.who { flex: 1; font-size: 13px; color: #334155; }
+.acc { font-size: 12px; color: #94a3b8; }
+.go { font-size: 13px; color: #cbd5e1; }
+.acct-note { text-align: center; font-size: 11px; color: #a0aec0; margin: 8px 0 0; }
+
 .foot { margin-top: 16px; text-align: center; font-size: 13px; }
 .foot a { color: #64748b; text-decoration: none; }
 .foot a:hover { color: #1b6e5a; }
