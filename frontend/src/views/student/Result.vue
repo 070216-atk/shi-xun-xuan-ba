@@ -50,6 +50,7 @@ const finalMentorName = computed(() => {
   const hit = offers.find(o => o.status === 'confirmed' && o.mentorName)
   return hit ? hit.mentorName : ''
 })
-const status = computed(() => (store.user ? studentStatus(store.user.id) : ''))
+const status = computed(() =>
+  store.studentStatus?.statusText || (store.user ? studentStatus(store.user.id) : ''))
 const app = computed(() => store.applications[`${store.user?.id}:${store.round}`])
 </script>

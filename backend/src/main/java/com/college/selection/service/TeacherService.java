@@ -138,12 +138,12 @@ public class TeacherService {
         allStudents.addAll(adjust);
         for (Long studentId : allStudents) {
             if (teacherMapper.countAppliedToLab(studentId, t.labId, round) == 0) {
-                throw new BizException(2007, "学生 " + studentId + " 没有报名本实训室");
+                throw new BizException(2007, who(studentId) + " 没有报名本实训室");
             }
         }
         for (Long studentId : admitted) {
             if (offerMapper.countAnyConfirmed(studentId, round) > 0) {
-                throw new BizException(2007, "学生 " + studentId + " 已确认了其他导师");
+                throw new BizException(2007, who(studentId) + " 已确认了其他导师，不能再发拟录取");
             }
         }
 
@@ -166,9 +166,14 @@ public class TeacherService {
         }
     }
 
+    /** 把数字 id 换成人看得懂的名字，别在报错里甩 ID */
+    private String who(Long studentId) {
+        SysUser u = userMapper.findById(studentId);
+        return u == null ? ("学生 #" + studentId) : (u.realName + "（" + u.code + "）");
+    }
+
     private Offer insert(SysUser t, Integer round, Long studentId, String type, Integer rank,
-                         LocalDateTime now, LocalDateTime deadline) {
-        Offer o = new Offer();
+                         LocalDateTime now, LocalDateTime deadline) {        Offer o = new Offer();
         o.studentId = studentId;
         o.labId = t.labId;
         o.mentorId = t.mentorId;

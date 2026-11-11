@@ -17,4 +17,7 @@ public class StudentStatusVO {
 
     /** 本轮收到几个意向 */
     public Integer offerCount;
+
+    /** 公示状态：NONE / PUBLISHED / ENDED */
+    public String publicity;
 }

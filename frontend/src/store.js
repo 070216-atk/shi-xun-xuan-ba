@@ -178,10 +178,20 @@ export function logout() {
 
 export async function loadStudent() {
   const sid = store.user.id
-  const [app, offers] = await Promise.all([
+  const [app, offers, st] = await Promise.all([
     api.getMyApplication(store.round),
-    api.getMyOffers(store.round)
+    api.getMyOffers(store.round),
+    api.getMyStatus(store.round).catch(() => null)
   ])
+  // 后端的状态是唯一口径，页面直接用，不再在前端重算
+  store.studentStatus = st
+  if (st) {
+    store.publicity = {
+      published: st.publicity === 'PUBLISHED' || st.publicity === 'ENDED',
+      start: null,
+      ended: st.publicity === 'ENDED'
+    }
+  }
   const key = `${sid}:${store.round}`
   if (app) {
     store.applications[key] = {
@@ -371,14 +381,9 @@ export async function doAdjust(level, mentorId, studentCodes, conclusion) {
   await loadAdmin()
 }
 
-export async function switchStage(stageNo) {
-  const st = stages.find((s) => s.id === stageNo)
-  if (!st || !st.dbId) return
-  const now = new Date()
-  const start = new Date(now.getTime() - 3600 * 1000)
-  const end = new Date(now.getTime() + 4 * 3600 * 1000)
-  const f = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`
-  await api.updateStage(st.dbId, { startAt: f(start), endAt: f(end) })
+export async function switchStage(stageNo, hours = 4) {
+  // 后端会先把本轮其他阶段全部关掉，再打开目标阶段，避免多个阶段同时开放
+  await api.switchStage({ round: store.round, stageNo, hours })
   await loadPublic()
 }
 

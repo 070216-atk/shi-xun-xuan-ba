@@ -63,7 +63,8 @@ onMounted(() => {
 })
 
 const currentStage = computed(() => stages.find(s => s.id === store.currentStage))
-const status = computed(() => (store.user ? studentStatus(store.user.id) : ''))
+const status = computed(() =>
+  store.studentStatus?.statusText || (store.user ? studentStatus(store.user.id) : ''))
 const offers = computed(() => store.offers[store.user?.id] || [])
 const pendingOffers = computed(() => offers.value.filter(o => o.status === 'pending'))
 const app = computed(() => store.applications[`${store.user?.id}:${store.round}`])

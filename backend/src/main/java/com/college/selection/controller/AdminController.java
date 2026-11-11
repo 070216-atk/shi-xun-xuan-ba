@@ -7,6 +7,7 @@ import com.college.selection.dto.AdjustReq;
 import com.college.selection.dto.ObjectionReq;
 import com.college.selection.dto.QuotaVO;
 import com.college.selection.dto.StageUpdateReq;
+import com.college.selection.dto.SwitchStageReq;
 import com.college.selection.entity.Publicity;
 import com.college.selection.entity.Stage;
 import com.college.selection.service.AdminService;
@@ -42,6 +43,15 @@ public class AdminController {
             @PathVariable Long id,
             @RequestBody StageUpdateReq req) {
         adminService.updateStage(userId, id, req.startAt, req.endAt);
+        return Result.ok(null);
+    }
+
+    /** 切换当前阶段（会关闭本轮其他阶段，保证同一时刻只有一个阶段是"当前"） */
+    @PostMapping("/stages/switch")
+    public Result<Void> switchStage(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestBody SwitchStageReq req) {
+        adminService.switchStage(userId, req.round == null ? 1 : req.round, req.stageNo, req.hours);
         return Result.ok(null);
     }
 

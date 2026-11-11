@@ -3,7 +3,9 @@ package com.college.selection.service;
 import com.college.selection.dto.StudentStatusVO;
 import com.college.selection.entity.Application;
 import com.college.selection.entity.Offer;
+import com.college.selection.entity.Publicity;
 import com.college.selection.entity.Stage;
+import com.college.selection.mapper.AdminMapper;
 import com.college.selection.mapper.ApplicationMapper;
 import com.college.selection.mapper.OfferMapper;
 import org.springframework.stereotype.Service;
@@ -13,8 +15,11 @@ import java.util.List;
 /**
  * 学生状态推导。
  *
- * 状态不建表，由 application + offer 推导（见 schema.sql 末尾的枚举说明），
+ * 状态不建表，由 application + offer + publicity 推导（见 schema.sql 末尾的枚举说明），
  * 而且只在 service 层算——controller 不允许自己拼状态。
+ *
+ * 注：这里注入 AdminMapper 只是为了读一下 latestPublicity（公示是否结束），
+ * 因为"正式入组"这个状态依赖公示结果。
  */
 @Service
 public class StudentStatusService {
@@ -22,13 +27,16 @@ public class StudentStatusService {
     private final ApplicationMapper appMapper;
     private final OfferMapper offerMapper;
     private final StageService stageService;
+    private final AdminMapper adminMapper;
 
     public StudentStatusService(ApplicationMapper appMapper,
                                 OfferMapper offerMapper,
-                                StageService stageService) {
+                                StageService stageService,
+                                AdminMapper adminMapper) {
         this.appMapper = appMapper;
         this.offerMapper = offerMapper;
         this.stageService = stageService;
+        this.adminMapper = adminMapper;
     }
 
     public StudentStatusVO compute(Long studentId, Integer round) {
@@ -47,8 +55,7 @@ public class StudentStatusService {
         List<Offer> offers = offerMapper.findByStudent(studentId, round);
         vo.offerCount = offers.size();
 
-        boolean confirmed = offers.stream()
-                .anyMatch(o -> "CONFIRMED".equals(o.status));
+        boolean confirmed = offers.stream().anyMatch(o -> "CONFIRMED".equals(o.status));
         boolean admittedIssued = offers.stream()
                 .anyMatch(o -> "ADMITTED".equals(o.type) && "ISSUED".equals(o.status));
         boolean waitlist = offers.stream()
@@ -56,8 +63,15 @@ public class StudentStatusService {
         boolean adjustCandidate = offers.stream()
                 .anyMatch(o -> "ADJUST_CANDIDATE".equals(o.type));
 
-        if (confirmed) {
-            set(vo, "CONFIRMED", "已确认去向");
+        Publicity pub = adminMapper.latestPublicity(round);
+        boolean publicityEnded = pub != null && "ENDED".equals(pub.status);
+        boolean publicityOpen = pub != null && "PUBLISHED".equals(pub.status);
+        vo.publicity = publicityEnded ? "ENDED" : publicityOpen ? "PUBLISHED" : "NONE";
+
+        if (confirmed && publicityEnded) {
+            set(vo, "ADMITTED", "已正式入组");
+        } else if (confirmed) {
+            set(vo, "CONFIRMED", publicityOpen ? "已确认去向，公示中" : "已确认去向");
         } else if (admittedIssued) {
             set(vo, "OFFERED", "已获得拟录取，请在截止前选择唯一去向");
         } else if (waitlist) {
@@ -65,10 +79,8 @@ public class StudentStatusService {
         } else if (adjustCandidate) {
             set(vo, "ADJUSTING", "已进入调剂候选，等待统筹安排");
         } else if (app == null) {
-            // 一次都没填报过，和"填了但没录取"是两种状态，不能混
             set(vo, "NOT_APPLIED", "尚未填报意向");
         } else if (cur == null) {
-            // 填过、当前没有任何阶段在开放、也没拿到意向
             set(vo, "NOT_ADMITTED", "本轮暂无录取结果");
         } else {
             set(vo, "APPLIED", "已提交意向，等待面试");

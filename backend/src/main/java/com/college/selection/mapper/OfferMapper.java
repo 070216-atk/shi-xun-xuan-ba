@@ -76,8 +76,11 @@ public interface OfferMapper {
     int countConfirmed(@Param("mentorId") Long mentorId, @Param("round") Integer round);
 
     @Select("""
-            SELECT * FROM offer
-             WHERE student_id = #{studentId} AND round_no = #{round} AND status = 'CONFIRMED'
+            SELECT o.*, l.code AS lab_code, l.name AS lab_name, m.name AS mentor_name
+              FROM offer o
+              JOIN lab l    ON l.id = o.lab_id
+              JOIN mentor m ON m.id = o.mentor_id
+             WHERE o.student_id = #{studentId} AND o.round_no = #{round} AND o.status = 'CONFIRMED'
              LIMIT 1
             """)
     Offer findConfirmed(@Param("studentId") Long studentId, @Param("round") Integer round);

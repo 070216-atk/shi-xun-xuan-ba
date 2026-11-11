@@ -106,6 +106,26 @@ public interface AdminMapper {
                     @Param("startAt") LocalDateTime startAt,
                     @Param("endAt") LocalDateTime endAt);
 
+    /** 切换阶段时，先把本轮所有阶段压到过去（相当于全部关闭） */
+    @Update("""
+            UPDATE stage
+               SET start_at = DATE_SUB(#{now}, INTERVAL 2 DAY),
+                   end_at   = DATE_SUB(#{now}, INTERVAL 1 DAY)
+             WHERE round_no = #{round}
+            """)
+    int closeAllStages(@Param("round") Integer round, @Param("now") LocalDateTime now);
+
+    /** 再单独打开目标阶段 */
+    @Update("""
+            UPDATE stage
+               SET start_at = #{startAt}, end_at = #{endAt}
+             WHERE round_no = #{round} AND stage_no = #{stageNo}
+            """)
+    int openStage(@Param("round") Integer round,
+                  @Param("stageNo") Integer stageNo,
+                  @Param("startAt") LocalDateTime startAt,
+                  @Param("endAt") LocalDateTime endAt);
+
     // ---------------- 公示 ----------------
 
     @Select("SELECT * FROM publicity WHERE round_no = #{round} ORDER BY id DESC LIMIT 1")

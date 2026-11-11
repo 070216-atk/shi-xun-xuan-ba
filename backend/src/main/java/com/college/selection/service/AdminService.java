@@ -24,19 +24,25 @@ import java.util.Map;
 @Service
 public class AdminService {
 
+    /** 统筹调剂对应流程图第 7 个环节 */
+    private static final int STAGE_ADJUST = 7;
+
     private final AdminMapper adminMapper;
     private final OfferMapper offerMapper;
     private final MentorMapper mentorMapper;
     private final SysUserMapper userMapper;
+    private final StageService stageService;
 
     public AdminService(AdminMapper adminMapper,
                         OfferMapper offerMapper,
                         MentorMapper mentorMapper,
-                        SysUserMapper userMapper) {
+                        SysUserMapper userMapper,
+                        StageService stageService) {
         this.adminMapper = adminMapper;
         this.offerMapper = offerMapper;
         this.mentorMapper = mentorMapper;
         this.userMapper = userMapper;
+        this.stageService = stageService;
     }
 
     private SysUser requireAdmin(Long adminId) {
@@ -77,6 +83,7 @@ public class AdminService {
     @Transactional
     public void adjustInternal(Long adminId, Integer round, Long mentorId, List<Long> studentIds) {
         requireAdmin(adminId);
+        stageService.assertOpen(round, STAGE_ADJUST);
         place(round, mentorId, studentIds, "统筹调剂-室内调剂");
     }
 
@@ -87,6 +94,7 @@ public class AdminService {
     @Transactional
     public void adjustCross(Long adminId, Integer round, Long mentorId, List<Long> studentIds) {
         requireAdmin(adminId);
+        stageService.assertOpen(round, STAGE_ADJUST);
         int pending = adminMapper.countPendingInternal(round);
         if (pending > 0) {
             throw new BizException(ErrorCode.ADJUST_ORDER_WRONG,
@@ -102,6 +110,7 @@ public class AdminService {
     @Transactional
     public void adjustTalk(Long adminId, Integer round, Long mentorId, Long studentId, String conclusion) {
         requireAdmin(adminId);
+        stageService.assertOpen(round, STAGE_ADJUST);
         int pending = adminMapper.countPendingCross(round);
         if (pending > 0) {
             throw new BizException(ErrorCode.ADJUST_ORDER_WRONG,
@@ -173,6 +182,24 @@ public class AdminService {
             throw new BizException(2009, "结束时间必须晚于开始时间");
         }
         adminMapper.updateStage(stageId, startAt, endAt);
+    }
+
+    /**
+     * 切换当前阶段。
+     *
+     * 必须"先关掉本轮其他阶段，再打开目标阶段"，否则会出现多个阶段同时开放，
+     * 导致 currentStage 语义模糊（管理员以为切到了阶段 5，学生端还认为在阶段 3 能填报）。
+     */
+    @Transactional
+    public void switchStage(Long adminId, Integer round, Integer stageNo, Integer hours) {
+        requireAdmin(adminId);
+        if (stageNo == null) {
+            throw new BizException(2009, "必须指定要切换到的阶段");
+        }
+        int h = (hours == null || hours < 1) ? 4 : hours;
+        LocalDateTime now = LocalDateTime.now();
+        adminMapper.closeAllStages(round, now);
+        adminMapper.openStage(round, stageNo, now.minusHours(1), now.plusHours(h));
     }
 
     // ---------------- 公示 ----------------
