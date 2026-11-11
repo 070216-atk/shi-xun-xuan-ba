@@ -3,7 +3,6 @@
     <div class="login-card">
       <div class="brand-mark">实训室进组选拔</div>
       <h2>统一身份登录</h2>
-      <p class="muted" style="text-align:center">学生 / 导师 使用同一入口，系统按账号身份自动分流</p>
 
       <el-form label-position="top" @submit.prevent="onLogin" style="margin-top:18px">
         <el-form-item label="学号 / 工号">
@@ -18,17 +17,16 @@
         </el-button>
       </el-form>
 
-      <div class="demo">
-        <div class="demo-head" @click="showDemo = !showDemo">
-          演示账号 {{ showDemo ? '收起' : '展开' }}
+      <div class="quick">
+        <div class="quick-title"><span>快捷登录</span></div>
+        <div class="quick-grid">
+          <button v-for="d in quicks" :key="d.u" type="button" class="quick-btn"
+            :disabled="loading" @click="quickLogin(d)">
+            <span class="role">{{ d.role }}</span>
+            <span class="who">{{ d.who }}</span>
+          </button>
         </div>
-        <div v-if="showDemo" class="demo-body">
-          <div v-for="d in demos" :key="d.u" class="demo-row">
-            <span>{{ d.label }}</span>
-            <el-button size="small" link type="primary" @click="fill(d)">{{ d.u }}</el-button>
-          </div>
-          <p class="muted" style="margin-top:6px">密码都是 123456</p>
-        </div>
+        <p class="quick-note">演示环境，一键以对应身份进入</p>
       </div>
 
       <div class="foot">
@@ -50,16 +48,20 @@ const router = useRouter()
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
-const showDemo = ref(false)
 
-const demos = [
-  { u: 'student01', label: '学生 李明' },
-  { u: 'student02', label: '学生 王芳' },
-  { u: 'teacher01', label: '导师 刘冠军（202 室）' },
-  { u: 'teacher03', label: '导师 高璇（404 室）' }
+// 快捷登录：演示环境用，点一下直接以该身份进入
+const quicks = [
+  { u: 'student01', role: '学生', who: '李明' },
+  { u: 'student02', role: '学生', who: '王芳' },
+  { u: 'teacher01', role: '导师', who: '刘冠军 · 202 室' },
+  { u: 'teacher03', role: '导师', who: '高璇 · 404 室' }
 ]
 
-function fill(d) { username.value = d.u; password.value = '123456' }
+async function quickLogin(d) {
+  username.value = d.u
+  password.value = '123456'
+  await onLogin()
+}
 
 async function onLogin() {
   if (!username.value.trim()) return ElMessage.warning('请输入学号或工号')
@@ -92,10 +94,24 @@ async function onLogin() {
 }
 .brand-mark { text-align: center; font-size: 12px; letter-spacing: 3px; color: #1b6e5a; }
 .login-card h2 { text-align: center; color: #1e3a8a; font-size: 19px; margin: 6px 0 2px; }
-.demo { margin-top: 18px; border-top: 1px dashed #e5e9f0; padding-top: 12px; }
-.demo-head { font-size: 13px; color: #64748b; cursor: pointer; user-select: none; }
-.demo-body { margin-top: 8px; font-size: 13px; }
-.demo-row { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; color: #475569; }
+.quick { margin-top: 20px; }
+.quick-title {
+  display: flex; align-items: center; gap: 10px; color: #94a3b8; font-size: 12px;
+  margin-bottom: 12px;
+}
+.quick-title::before, .quick-title::after {
+  content: ''; flex: 1; height: 1px; background: #e5e9f0;
+}
+.quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.quick-btn {
+  border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 9px; padding: 9px 10px;
+  cursor: pointer; text-align: left; font-family: inherit; transition: .15s;
+}
+.quick-btn:hover:not(:disabled) { border-color: #1b6e5a; background: #ecfdf5; }
+.quick-btn:disabled { opacity: .6; cursor: not-allowed; }
+.quick-btn .role { display: block; font-size: 11px; color: #1b6e5a; font-weight: 600; }
+.quick-btn .who { display: block; font-size: 12px; color: #475569; margin-top: 2px; }
+.quick-note { text-align: center; font-size: 11px; color: #a0aec0; margin: 10px 0 0; }
 .foot { margin-top: 16px; text-align: center; font-size: 13px; }
 .foot a { color: #64748b; text-decoration: none; }
 .foot a:hover { color: #1b6e5a; }

@@ -25,8 +25,11 @@
       <el-alert type="info" :closable="false" style="margin-top:16px"
         title="本入口仅限学院管理员；学生与导师请从统一登录入口进入。" />
 
-      <div class="demo" @click="fill">
-        演示管理员账号：admin（密码 123456）
+      <div class="quick">
+        <button type="button" class="quick-btn" :disabled="loading" @click="quickLogin">
+          快捷登录：学院管理员
+        </button>
+        <p class="quick-note">演示环境，一键以管理员身份进入</p>
       </div>
 
       <div class="foot">
@@ -47,7 +50,11 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 
-function fill() { username.value = 'admin'; password.value = '123456' }
+function quickLogin() {
+  username.value = 'admin'
+  password.value = '123456'
+  onLogin()
+}
 
 async function onLogin() {
   if (!username.value.trim()) return ElMessage.warning('请输入管理员工号')
@@ -86,11 +93,15 @@ async function onLogin() {
 .admin-card h2 { color: #e2e8f0; font-size: 18px; margin: 0; }
 .admin-card .muted { color: #94a3b8; font-size: 12px; margin: 4px 0 0; }
 .admin-card :deep(.el-form-item__label) { color: #cbd5e1; }
-.demo {
-  margin-top: 14px; font-size: 13px; color: #94a3b8; cursor: pointer;
-  border-top: 1px dashed #334155; padding-top: 12px;
+.quick { margin-top: 16px; }
+.quick-btn {
+  width: 100%; border: 1px dashed #475569; background: #24334a; color: #cbd5e1;
+  border-radius: 9px; padding: 10px; cursor: pointer; font-family: inherit; font-size: 13px;
+  transition: .15s;
 }
-.demo:hover { color: #38bdf8; }
+.quick-btn:hover:not(:disabled) { border-color: #38bdf8; color: #e2e8f0; background: #2b3d57; }
+.quick-btn:disabled { opacity: .6; cursor: not-allowed; }
+.quick-note { text-align: center; font-size: 11px; color: #64748b; margin: 8px 0 0; }
 .foot { margin-top: 14px; text-align: center; font-size: 13px; }
 .foot a { color: #64748b; text-decoration: none; }
 .foot a:hover { color: #94a3b8; }
