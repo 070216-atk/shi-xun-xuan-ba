@@ -32,6 +32,24 @@
         <el-button :loading="checking" @click="doVerify">校验</el-button>
         <el-button @click="refreshGaps">刷新缺口</el-button>
       </div>
+      <div v-if="gaps && gaps.unplaced.length" style="margin-top:14px;padding-top:12px;border-top:1px dashed #ddd">
+        <div class="page-title" style="font-size:14px">指定安置（约谈后同意去某个导师）</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <el-select v-model="assignStudent" placeholder="选学生" style="width:180px" filterable>
+            <el-option v-for="u in gaps.unplaced" :key="u.studentId" :value="u.studentId"
+              :label="`${u.realName}（${u.code}）`" />
+          </el-select>
+          <el-select v-model="assignMentor" placeholder="选导师" style="width:200px" filterable>
+            <el-option v-for="m in gaps.availableMentors" :key="m.mentorId" :value="m.mentorId"
+              :label="`${m.labCode} ${m.mentorName}（剩 ${m.remaining}）`" />
+          </el-select>
+          <el-input v-model="assignReason" placeholder="安置原因（必填，学生能看到）" style="width:260px" />
+          <el-button type="success" :loading="assigning" @click="doAssign">指定安置</el-button>
+        </div>
+        <p class="muted" style="margin:6px 0 0">
+          这条会直接变成「已确认」，备注写成「学院统筹安置：原因」，学生在「我的选拔」里能看到这句说明。
+        </p>
+      </div>
       <el-alert v-if="verifyResult" :type="verifyResult.ok ? 'success' : 'error'" :closable="false" style="margin-top:10px"
         :title="verifyResult.ok
           ? `校验通过：${verifyResult.confirmedCount}/${verifyResult.appliedCount} 人都有唯一去向`
@@ -143,7 +161,7 @@
 <script setup>
 import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { store, loadAdmin, doAdjust, loadPlacement, finalizePlacement, verifyPlacement } from '../../store'
+import { store, loadAdmin, doAdjust, loadPlacement, finalizePlacement, verifyPlacement, assignPlacement } from '../../store'
 
 const vacancies = computed(() => (store.pool?.vacancies || []))
 const candidates = computed(() => (store.pool?.candidates || []))
@@ -202,6 +220,30 @@ async function doFinalize() {
   }
 }
 
+const assigning = ref(false)
+const assignStudent = ref(null)
+const assignMentor = ref(null)
+const assignReason = ref('')
+
+async function doAssign() {
+  if (!assignStudent.value) return ElMessage.warning('请选择学生')
+  if (!assignMentor.value) return ElMessage.warning('请选择导师')
+  if (!assignReason.value.trim()) return ElMessage.warning('必须填写安置原因，学生要能看到')
+  assigning.value = true
+  try {
+    const r = await assignPlacement(assignStudent.value, assignMentor.value, assignReason.value.trim())
+    if (r.already) ElMessage.info('该学生已经在这个导师名下')
+    else ElMessage.success(`已安置到 ${r.mentorName}，学生端会显示「${r.remark}」`)
+    assignStudent.value = null
+    assignMentor.value = null
+    assignReason.value = ''
+    verifyResult.value = await verifyPlacement()
+  } catch (e) {
+    ElMessage.error(e.message || '安置失败')
+  } finally {
+    assigning.value = false
+  }
+}
 async function doVerify() {
   checking.value = true
   try {

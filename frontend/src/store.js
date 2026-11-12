@@ -251,7 +251,9 @@ export async function loadStudent() {
     mentorName: o.mentorName,
     labName: o.labName,
     type: o.type,
-    status: offerStatus(o.status)
+    status: offerStatus(o.status),
+    remark: o.remark || '',
+    confirmedAt: o.confirmedAt
   }))
   const conf = offers.find((o) => o.status === 'CONFIRMED')
   if (conf) store.finalResults[sid] = conf.labId
@@ -585,6 +587,13 @@ export async function finalizePlacement(includeRefusers) {
 /** 收口校验 */
 export function verifyPlacement() {
   return api.verifyPlacement(store.round)
+}
+/** 管理员指定安置：明确指定导师 + 原因，学生端可见 */
+export async function assignPlacement(studentId, mentorId, reason) {
+  const r = await api.assignPlacement({ round: store.round, studentId, mentorId, reason })
+  await loadAdmin()
+  await loadPlacement()
+  return r
 }
 // ---------------- 公告 ----------------
 

@@ -209,6 +209,20 @@ public interface OfferMapper {
                           @Param("round") Integer round,
                           @Param("keepId") Long keepId);
 
+    /** 写备注（学院统筹安置的说明写在这里，学生页面能看到） */
+    @Update("UPDATE offer SET remark = #{remark} WHERE id = #{id}")
+    int setRemark(@Param("id") Long id, @Param("remark") String remark);
+
+    /** 管理员改派时，把该学生原来的确认记录作废（转走） */
+    @Update("""
+            UPDATE offer SET status = 'EXPIRED'
+             WHERE student_id = #{studentId} AND round_no = #{round}
+               AND status = 'CONFIRMED' AND id <> #{keepId}
+            """)
+    int expireOtherConfirmed(@Param("studentId") Long studentId,
+                             @Param("round") Integer round,
+                             @Param("keepId") Long keepId);
+
     /** 收口时把该学生其他所有未确认的意向（含递补、调剂候选）一并作废 */
     @Update("""
             UPDATE offer SET status = 'EXPIRED'

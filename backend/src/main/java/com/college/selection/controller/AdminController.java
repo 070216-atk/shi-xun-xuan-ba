@@ -5,6 +5,7 @@ import com.college.selection.config.LoginInterceptor;
 import com.college.selection.dto.AdjustPoolVO;
 import com.college.selection.dto.AdjustReq;
 import com.college.selection.dto.ObjectionReq;
+import com.college.selection.dto.AssignPlacementReq;
 import com.college.selection.dto.QuotaVO;
 import com.college.selection.dto.StageUpdateReq;
 import com.college.selection.dto.SwitchStageReq;
@@ -148,8 +149,16 @@ public class AdminController {
         return Result.ok(adminService.finalizePlacement(userId, round, includeRefusers));
     }
 
-    /** 收口校验：每人恰好一个去向、导师不超录 */
-    @GetMapping("/placement/verify")
+    /** 指定安置：管理员明确指定某个学生去某个导师（必须填原因，学生可见） */
+    @PostMapping("/placement/assign")
+    public Result<Map<String, Object>> assignPlacement(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestBody AssignPlacementReq req) {
+        return Result.ok(adminService.assignPlacement(userId,
+                req.round == null ? 1 : req.round, req.studentId, req.mentorId, req.reason));
+    }
+
+    /** 收口校验：每人恰好一个去向、导师不超录 */    @GetMapping("/placement/verify")
     public Result<Map<String, Object>> placementVerify(@RequestParam(defaultValue = "1") Integer round) {
         return Result.ok(adminService.placementVerify(round));
     }

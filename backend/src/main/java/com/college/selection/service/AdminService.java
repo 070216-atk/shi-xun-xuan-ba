@@ -461,6 +461,124 @@ public class AdminService {
         offerMapper.expireAllOther(studentId, round, o.id);
     }
 
+    /**
+     * 管理员指定安置（约谈后的"同意的去处"）。
+     *
+     * 和批量收口的区别：这里是管理员明确指定去哪个导师，并且必须写原因，
+     * 结果会直接变成"已确认"，备注写明"学院统筹安置"，学生在自己页面能看到这条说明。
+     */
+    @Transactional
+    public Map<String, Object> assignPlacement(Long adminId, Integer round, Long studentId,
+                                               Long mentorId, String reason) {
+        requireAdmin(adminId);
+        if (studentId == null || mentorId == null) {
+            throw new BizException(2007, "必须同时指定学生和导师");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BizException(2007, "必须填写安置原因（例如约谈结论），否则学生看不到为什么被安排到这里");
+        }
+        if (!adminMapper.appliedStudentIds(round).contains(studentId)) {
+            throw new BizException(2007, "该学生本轮没有填报，不在安置范围内");
+        }
+
+        Mentor m = mentorMapper.findById(mentorId);
+        if (m == null) {
+            throw new BizException(2007, "导师不存在：" + mentorId);
+        }
+        Integer quota = offerMapper.lockMentorQuota(mentorId);
+        if (quota == null) {
+            throw new BizException(2007, "导师档案异常");
+        }
+
+        // 如果该学生已经确认在这里，直接返回
+        for (Offer o : offerMapper.findByStudent(studentId, round)) {
+            if (o.mentorId.equals(mentorId) && "CONFIRMED".equals(o.status)) {
+                Map<String, Object> same = new LinkedHashMap<>();
+                same.put("studentId", studentId);
+                same.put("mentorId", mentorId);
+                same.put("already", true);
+                return same;
+            }
+        }
+
+        // 目标导师已满 → 拒绝（先把原记录留着，不动）
+        int confirmedCount = offerMapper.countConfirmed(mentorId, round);
+        if (confirmedCount >= quota) {
+            throw new BizException(ErrorCode.QUOTA_FULL,
+                    String.format("%s 已录满（%d/%d），请换一个导师", m.name, confirmedCount, quota));
+        }
+
+        String remark = "学院统筹安置：" + reason.trim();
+        LocalDateTime now = LocalDateTime.now();
+
+        // 已有与该导师的有效意向 → 直接确认；否则新建
+        Offer target = null;
+        for (Offer o : offerMapper.findByStudent(studentId, round)) {
+            if (o.mentorId.equals(mentorId)
+                    && !"VOID".equals(o.status) && !"DECLINED".equals(o.status)) {
+                target = o;
+                break;
+            }
+        }
+        if (target != null) {
+            offerMapper.updateStatus(target.id, "CONFIRMED", now);
+        } else {
+            Offer o = new Offer();
+            o.studentId = studentId;
+            o.labId = m.labId;
+            o.mentorId = mentorId;
+            o.roundNo = round;
+            o.type = "ADMITTED";
+            o.rankNo = offerMapper.maxAdmittedRank(mentorId, round) + 1;
+            o.status = "ISSUED";
+            o.issuedAt = now;
+            o.remark = remark;
+            offerMapper.insert(o);
+            offerMapper.updateStatus(o.id, "CONFIRMED", now);
+            target = o;
+        }
+        offerMapper.setRemark(target.id, remark);
+
+        // 原来别处的确认（改派）与其余待确认意向一并作废
+        List<Offer> before = offerMapper.findByStudent(studentId, round);
+        for (Offer o : before) {
+            if (!o.mentorId.equals(mentorId) && "CONFIRMED".equals(o.status)) {
+                offerMapper.updateStatus(o.id, "EXPIRED", null);
+                promoteNextWaitlist(o.mentorId, round);
+            }
+        }
+        offerMapper.expireOtherConfirmed(studentId, round, target.id);
+        offerMapper.expireAllOther(studentId, round, target.id);
+
+        logMapper.insertWithState(adminId, "ADMIN", "ASSIGN_PLACEMENT", "OFFER", target.id,
+                null, "CONFIRMED",
+                "学院统筹安置 " + who(studentId) + " → " + m.name + "，原因：" + reason.trim());
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("studentId", studentId);
+        data.put("mentorId", mentorId);
+        data.put("mentorName", m.name);
+        data.put("labId", m.labId);
+        data.put("remark", remark);
+        data.put("already", false);
+        return data;
+    }
+
+    /** 把学生 id 换成人看得懂的名字 */
+    private String who(Long studentId) {
+        var u = userMapper.findById(studentId);
+        return u == null ? ("学生 #" + studentId) : (u.realName + "（" + u.code + "）");
+    }
+    /** 名额腾出来后让该导师递补第一名上位 */
+    private void promoteNextWaitlist(Long mentorId, Integer round) {
+        List<Offer> wl = offerMapper.findWaitlist(mentorId, round);
+        if (wl.isEmpty()) return;
+        Offer next = wl.get(0);
+        offerMapper.promoteToAdmitted(next.id,
+                offerMapper.maxAdmittedRank(mentorId, round) + 1,
+                stageService.getEndAt(round, STAGE_CONFIRM));
+    }
+
     /** 收口前的缺口清单：谁还没着落、还有多少空位、够不够 */
     public Map<String, Object> placementGaps(Integer round) {
         List<Long> applied = adminMapper.appliedStudentIds(round);

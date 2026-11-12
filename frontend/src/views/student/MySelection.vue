@@ -31,6 +31,8 @@
           <el-tag :type="offerTag(o.status).type" size="small" style="margin-left:8px">{{ offerTag(o.status).label }}</el-tag>
           <el-tag v-if="o.type === 'WAITLIST'" type="info" size="small" style="margin-left:4px">递补</el-tag>
           <el-tag v-if="o.type === 'ADJUST_CANDIDATE'" type="info" size="small" style="margin-left:4px">调剂候选</el-tag>
+          <el-tag v-if="isPlaced(o)" type="warning" size="small" style="margin-left:4px">学院统筹</el-tag>
+          <div v-if="isPlaced(o)" class="muted" style="margin-top:4px;font-size:12px">{{ o.remark }}</div>
         </div>
         <div v-if="o.status === 'pending' && o.type === 'ADMITTED'">
           <el-button type="primary" size="small" :loading="confirming" @click="doConfirm(o)">
@@ -104,6 +106,10 @@ const countdown = computed(() => {
   return `${Math.floor(ms / 3600000)}时${String(Math.floor(ms % 3600000 / 60000)).padStart(2, '0')}分${String(Math.floor(ms % 60000 / 1000)).padStart(2, '0')}秒`
 })
 
+/** 这条是学院统筹安置的（管理员约谈后指定），备注里带说明 */
+function isPlaced(o) {
+  return (o.remark || '').indexOf('学院统筹安置') === 0
+}
 function labName(id) { return labById(id)?.name || (id ? `实训室 ${id}` : '—') }
 function mentorName(labId, mentorId) {
   const m = (labById(labId)?.mentors || []).find(x => x.id === mentorId)

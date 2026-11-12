@@ -92,6 +92,8 @@ export const getDashboard = (round = 1) => http.get(`/admin/dashboard?round=${ro
 export const getPlacementGaps = (round = 1) => http.get(`/admin/placement/gaps?round=${round}`)
 export const finalizePlacement = (round = 1, includeRefusers = true) => http.post(`/admin/placement/finalize?round=${round}&includeRefusers=${includeRefusers}`)
 export const verifyPlacement = (round = 1) => http.get(`/admin/placement/verify?round=${round}`)
+/** 管理员指定安置（必须填原因，学生能看到） */
+export const assignPlacement = (body) => http.post('/admin/placement/assign', body)
 
 // ---------------- 公告 / 日志 ----------------
 
