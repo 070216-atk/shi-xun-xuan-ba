@@ -4,7 +4,10 @@
 
     <div class="card status-card">
       <div class="muted">当前状态</div>
-      <div class="status-text">{{ status }}</div>
+      <div class="status-text">
+        {{ status }}
+        <el-tag v-if="inPublicity" type="warning" size="small" style="margin-left:8px;vertical-align:middle">公示中</el-tag>
+      </div>
       <div class="muted">
         当前阶段：{{ currentStage?.name || '未开放' }} ｜ 第 {{ store.round }} 轮
       </div>
@@ -46,8 +49,8 @@
           跨室调剂：{{ app.obeyCross ? '服从' : '不服从' }}
         </p>
       </template>
-      <el-empty v-else description="本轮尚未填报" :image-size="60">
-        <el-button v-if="store.currentStage === 3" type="primary" @click="$router.push('/apply')">去填报</el-button>
+      <el-empty v-else :description="alreadyAdmitted ? '你已被录取，后续轮次无需填报' : '本轮尚未填报'" :image-size="60">
+        <el-button v-if="store.currentStage === 3 && !alreadyAdmitted" type="primary" @click="$router.push('/apply')">去填报</el-button>
       </el-empty>
     </div>
   </div>
@@ -65,11 +68,15 @@ onMounted(() => {
 const currentStage = computed(() => stages.find(s => s.id === store.currentStage))
 const status = computed(() =>
   store.studentStatus?.statusText || (store.user ? studentStatus(store.user.id) : ''))
+/** 后端状态文案在公示期间是"…公示中"，这里据此给状态加个醒目标记 */
+const inPublicity = computed(() => (status.value || '').includes('公示中'))
 const offers = computed(() => store.offers[store.user?.id] || [])
 const pendingOffers = computed(() => offers.value.filter(o => o.status === 'pending'))
 const app = computed(() => store.applications[`${store.user?.id}:${store.round}`])
+const alreadyAdmitted = computed(() => ['ADMITTED', 'CONFIRMED'].includes(store.studentStatus?.status))
 
 const needAction = computed(() => {
+  if (alreadyAdmitted.value) return false
   if (store.currentStage === 3 && !app.value) return true
   if (pendingOffers.value.length > 1 && pendingOffers.value.some(o => o.type === 'ADMITTED')) return true
   return false

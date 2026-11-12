@@ -32,6 +32,7 @@ public class WebConfig implements WebMvcConfigurer {
                         "/api/labs",
                         "/api/labs/**",
                         "/api/stages",
+                        "/api/rounds",
                         "/api/publicity",
                         "/api/notices"
                 );

@@ -57,7 +57,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { login, loadPublic } from '../../store'
+import { login, loadPublic, loadRounds } from '../../store'
 
 const router = useRouter()
 const username = ref('')
@@ -80,6 +80,7 @@ async function onLogin() {
     const r = await login(username.value.trim(), password.value, 'admin')
     if (r === 'fail') return ElMessage.error('账号或密码错误')
     if (r === 'forbidden') return ElMessage.error('该账号不是管理员，请从统一登录入口进入')
+    await loadRounds(true)
     await loadPublic()
     ElMessage.success('登录成功')
     router.push('/admin/dashboard')

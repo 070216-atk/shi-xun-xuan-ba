@@ -21,12 +21,18 @@
       <p class="muted">
         当前第 {{ store.round }} 轮。开启下一轮会把上一轮置为结束，并复制一份阶段时间窗给新一轮（再去「流程配置」里改具体日期）。
       </p>
+      <el-alert v-if="!roundOpen" type="info" :closable="false" style="margin-bottom:12px"
+        :title="`第 ${store.round} 轮已结束，以下操作请先在右上角切换到进行中的轮次。`" />
       <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <el-button type="primary" @click="publish">公布剩余名额</el-button>
-        <el-button type="warning" :disabled="store.round >= 3" @click="openRound">
+        <el-button type="primary" :disabled="!roundOpen" @click="publish">公布剩余名额</el-button>
+        <el-button :disabled="!roundOpen" @click="settle">结算拟录取</el-button>
+        <el-button type="warning" :disabled="!roundOpen || store.round >= 3" @click="openRound">
           {{ store.round >= 3 ? '已完成三轮' : `开启第 ${store.round + 1} 轮补录` }}
         </el-button>
       </div>
+      <p class="muted" style="margin-top:8px">
+        「结算拟录取」用于分轮补录：导师发完名单后点一次，只有 1 个拟录取意向的学生自动确认，收到多个意向的学生需在本轮自行选择。
+      </p>
     </div>
   </div>
 </template>
@@ -34,9 +40,10 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { store, loadAdmin, openNextRound, publishQuotas } from '../../store'
+import { store, loadAdmin, openNextRound, publishQuotas, settleRound } from '../../store'
 
 const rows = computed(() => store.quotas || [])
+const roundOpen = computed(() => store.rounds.find(r => r.roundNo === store.round)?.status === 'OPEN')
 
 function refresh() {
   loadAdmin().then(() => ElMessage.success('已刷新')).catch(e => ElMessage.error(e.message))
@@ -52,6 +59,14 @@ async function publish() {
     ElMessage.success(`剩余名额已公布（共 ${r.total} 个），已写入操作日志`)
   } catch (e) {
     ElMessage.error(e.message || '公布失败')
+  }
+}
+async function settle() {
+  try {
+    const r = await settleRound()
+    ElMessage.success(`已结算：自动确认 ${r.autoConfirmed ?? 0} 人，${r.multiChoice ?? 0} 人需自主选择去向`)
+  } catch (e) {
+    ElMessage.error(e.message || '结算失败')
   }
 }
 async function openRound() {

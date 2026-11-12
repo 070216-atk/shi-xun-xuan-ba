@@ -20,4 +20,8 @@ public class StudentStatusVO {
 
     /** 公示状态：NONE / PUBLISHED / ENDED */
     public String publicity;
+
+    /** 若已在前几轮被录取：录取轮次与实训室名（页面据此禁止再填报） */
+    public Integer admittedRound;
+    public String admittedLabName;
 }

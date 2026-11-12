@@ -7,6 +7,7 @@ import com.college.selection.service.AdminService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,6 +24,14 @@ public class PublicController {
     public PublicController(AdminMapper adminMapper, AdminService adminService) {
         this.adminMapper = adminMapper;
         this.adminService = adminService;
+    }
+
+    /**
+     * 轮次列表（第 1 轮首轮、第 2/3 轮补录），前端顶栏据此提供轮次切换。
+     */
+    @GetMapping("/rounds")
+    public Result<List<Map<String, Object>>> rounds() {
+        return Result.ok(adminMapper.listRounds());
     }
 
     /**

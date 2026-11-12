@@ -22,6 +22,8 @@ export const me = () => http.get('/auth/me')
 // ---------------- 公开信息 ----------------
 
 export const getStages = (round = 1) => http.get(`/stages?round=${round}`)
+/** 轮次列表（公开接口）：[{ roundNo, status }] */
+export const getRounds = () => http.get('/rounds')
 export const getLabs = (round = 1) => http.get(`/labs?round=${round}`)
 export const getLab = (id, round = 1) => http.get(`/labs/${id}?round=${round}`)
 /** 公示状态 + 最终名单（公开接口，不用登录；未公示时返回 null） */
@@ -69,6 +71,8 @@ export const endPublicity = (round = 1) => http.post(`/admin/publicity/end?round
 export const addObjection = (body) => http.post('/admin/publicity/objections', body)
 export const resolveObjections = (round = 1) => http.post(`/admin/publicity/objections/resolve?round=${round}`)
 export const openRound = (round) => http.post('/admin/rounds', { round })
+/** 手动结算：只有 1 个拟录取意向的学生自动确认，多个等学生自己选 */
+export const settleOffers = (round = 1) => http.post(`/admin/settle?round=${round}`)
 export const getDashboard = (round = 1) => http.get(`/admin/dashboard?round=${round}`)
 
 // ---------------- 公告 / 日志 ----------------

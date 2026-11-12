@@ -8,6 +8,7 @@ import com.college.selection.dto.TeacherListsReq;
 import com.college.selection.dto.TeacherListsVO;
 import com.college.selection.entity.Offer;
 import com.college.selection.entity.SysUser;
+import com.college.selection.mapper.ApplicationMapper;
 import com.college.selection.mapper.MentorMapper;
 import com.college.selection.mapper.OfferMapper;
 import com.college.selection.mapper.OperationLogMapper;
@@ -28,20 +29,25 @@ public class TeacherService {
     private static final int STAGE_INTERVIEW = 4;
     /** 拟录取确认对应第 5 个环节，offer 的确认截止时间取它的结束时间 */
     private static final int STAGE_CONFIRM = 5;
+    /** 分轮补录：补录轮里导师同样要面试、发拟录取 */
+    private static final int STAGE_REFILL = 6;
 
     private final TeacherMapper teacherMapper;
     private final OfferMapper offerMapper;
+    private final ApplicationMapper applicationMapper;
     private final SysUserMapper userMapper;
     private final StageService stageService;
     private final OperationLogMapper logMapper;
 
     public TeacherService(TeacherMapper teacherMapper,
                           OfferMapper offerMapper,
+                          ApplicationMapper applicationMapper,
                           SysUserMapper userMapper,
                           StageService stageService,
                           OperationLogMapper logMapper) {
         this.teacherMapper = teacherMapper;
         this.offerMapper = offerMapper;
+        this.applicationMapper = applicationMapper;
         this.userMapper = userMapper;
         this.stageService = stageService;
         this.logMapper = logMapper;
@@ -107,17 +113,19 @@ public class TeacherService {
      * 提交三份名单。
      *
      * 规则：
-     *   1. 只能在"面试考核"阶段提交
+     *   1. 只能在"面试考核"或"分轮补录"阶段提交
      *   2. 拟录取人数 ≤ 该导师名额
      *   3. 每个学生都必须报过本室
      *   4. 已经确认了其他导师的学生不能再发拟录取
      *   5. 重复提交 = 覆盖本导师本轮名单
-     *   6. 提交后若某学生本轮只有 1 个拟录取意向 → 自动确认（PRD R8）
+     *   6. 首轮面试阶段不自动确认（等进入确认阶段统一结算）；
+     *      分轮补录阶段没有再走"拟录取确认"环节，所以提交时就地确认只有 1 个意向的学生
      */
     @Transactional
     public void saveLists(Long teacherId, Integer round, TeacherListsReq req) {
         SysUser t = requireTeacher(teacherId);
-        stageService.assertOpen(round, STAGE_INTERVIEW);
+        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_REFILL);
+        boolean refill = stageService.isOpen(round, STAGE_REFILL);
 
         List<Long> admitted = req.admitted == null ? Collections.emptyList() : req.admitted;
         List<Long> waitlist = req.waitlist == null ? Collections.emptyList() : req.waitlist;
@@ -132,7 +140,10 @@ public class TeacherService {
                     String.format("拟录取 %d 人超过名额 %d 人", admitted.size(), quota));
         }
 
-        LocalDateTime deadline = stageService.getEndAt(round, STAGE_CONFIRM);
+        // 首轮取阶段 5 的结束时间；补录轮走的是阶段 6，截止就取补录窗口的结束时间
+        LocalDateTime deadline = refill
+                ? stageService.getEndAt(round, STAGE_REFILL)
+                : stageService.getEndAt(round, STAGE_CONFIRM);
         LocalDateTime now = LocalDateTime.now();
 
         // 已经确认了本导师的学生，不能被悄悄从名单里移除（否则学生状态会莫名回退）
@@ -171,10 +182,22 @@ public class TeacherService {
             inserted.add(insert(t, round, adjust.get(i), "ADJUST_CANDIDATE", i + 1, now, deadline));
         }
 
-        // 注意：这里【不做】自动确认。
+        // 注意：首轮这里【不做】自动确认。
         // 面试阶段导师是并行提交名单的，如果一发就确认，第一个发名单的导师会把学生锁死，
         // "收到 2 个以上意向由学生自主选择"就永远不会发生。
         // 统一确认放到进入「拟录取与学生确认」阶段时由 AdminService.settle 批量结算。
+        //
+        // 分轮补录阶段没有再走"拟录取确认"环节，所以就地结算：
+        // 只填了 1 个意向（不可能再收到第二份拟录取）并且已发 1 份的学生直接确认；
+        // 填了多个意向的学生等所有导师提交完，在本阶段自己选。
+        if (refill) {
+            for (Long sid : admitted) {
+                if (applicationMapper.countItems(sid, round) == 1
+                        && offerMapper.countAdmittedIssued(sid, round) == 1) {
+                    offerMapper.autoConfirmByStudent(sid, round);
+                }
+            }
+        }
     }
 
     /** 把数字 id 换成人看得懂的名字，别在报错里甩 ID */

@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { store } from '../store'
+import { store, ensureSession } from '../store'
 
 const routes = [
   // ---- 前台：统一登录（学生 / 导师）----
@@ -36,8 +36,11 @@ const routes = [
 
 const router = createRouter({ history: createWebHashHistory(), routes })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   if (!to.meta.role) return true
+
+  // 整页刷新时先等登录态恢复完，再判断权限（否则会被误判成未登录）
+  await ensureSession()
 
   // 没登录：管理员路由回管理后台登录页，其余回统一登录页
   if (!store.user) {

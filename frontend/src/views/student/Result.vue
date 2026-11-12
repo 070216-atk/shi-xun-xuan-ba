@@ -4,17 +4,43 @@
 
     <div class="card" style="text-align:center">
       <template v-if="finalLab">
-        <el-result :icon="store.publicity.ended ? 'success' : 'info'"
-          :title="store.publicity.ended ? '正式入组' : '已录取（公示中 / 待公示）'"
+        <el-result :icon="admission.icon" :title="admission.title"
           :sub-title="`你的去向：${finalLab.name}`">
           <template #extra>
             <p v-if="finalMentorName">导师：{{ finalMentorName }}</p>
             <p class="muted">地点：{{ finalLab.location }} ｜ 联系方式：{{ finalLab.contact }}</p>
+            <p v-if="admission.hint" class="muted">{{ admission.hint }}</p>
           </template>
         </el-result>
       </template>
-      <el-result v-else icon="info" title="结果尚未产生"
+      <el-result v-else-if="latestAdmission" :icon="historyView.icon"
+        :title="historyView.title"
+        :sub-title="`你的去向：${latestAdmission.labName || labById(latestAdmission.labId)?.name || `实训室 ${latestAdmission.labId}`}`">
+        <template #extra>
+          <p v-if="latestAdmission.mentorName">导师：{{ latestAdmission.mentorName }}</p>
+          <p class="muted">录取后不再参与后续轮次，无需再填报。</p>
+          <p v-if="latestAdmission.publicity === 'PUBLISHED'" class="muted">
+            公示中，如有异议请线下联系学院教务。
+          </p>
+          <p v-else-if="latestAdmission.publicity === 'ENDED'" class="muted">
+            公示已结束，录取结果已生效。
+          </p>
+        </template>
+      </el-result>
+      <el-result v-else icon="info" title="本轮结果尚未产生"
         sub-title="请耐心等待各阶段选拔完成，最终结果将在此展示并公示 1 天。" />
+    </div>
+
+    <div v-if="history.length > 1" class="card">
+      <div class="page-title">往轮录取记录</div>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item v-for="h in history" :key="h.round" :label="`第 ${h.round} 轮`">
+          {{ h.labName || labById(h.labId)?.name || `实训室 ${h.labId}` }}
+          <span v-if="h.mentorName"> ｜ 导师：{{ h.mentorName }}</span>
+          <el-tag v-if="h.publicity === 'PUBLISHED'" type="warning" size="small" style="margin-left:8px">公示中</el-tag>
+          <el-tag v-else-if="h.publicity === 'ENDED'" type="success" size="small" style="margin-left:8px">已生效</el-tag>
+        </el-descriptions-item>
+      </el-descriptions>
     </div>
 
     <div class="card">
@@ -46,16 +72,28 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { store, labById, studentStatus, loadStudent, loadPublicity } from '../../store'
+import { store, labById, studentStatus, loadStudent, loadPublicity, loadFinalHistory } from '../../store'
 
-onMounted(() => {
+const history = ref([])
+const latestAdmission = computed(() => history.value[history.value.length - 1] || null)
+
+function refreshHistory() {
+  loadFinalHistory().then((h) => (history.value = h)).catch(() => (history.value = []))
+}
+
+onMounted(async () => {
   if (store.user?.role === 'student') {
-    loadStudent().catch(e => ElMessage.error(e.message))
+    // 先等状态接口回来；它不带公示起止时间，必须再让公开公示接口补上
+    await loadStudent().catch(e => ElMessage.error(e.message))
   }
-  loadPublicity().catch(() => {})
+  await loadPublicity().catch(() => {})
+  refreshHistory()
 })
+
+// 顶栏切轮次后，往轮记录也要跟着重算
+watch(() => store.round, refreshHistory)
 
 const finalLab = computed(() => {
   const lid = store.finalResults[store.user?.id]
@@ -65,6 +103,28 @@ const finalMentorName = computed(() => {
   const offers = store.offers[store.user?.id] || []
   const hit = offers.find(o => o.status === 'confirmed' && o.mentorName)
   return hit ? hit.mentorName : ''
+})
+
+/** 公示三态：未发布 / 公示中 / 已结束，页面文案全部从这里取 */
+const admission = computed(() => {
+  if (store.publicity.ended) {
+    return { icon: 'success', title: '正式入组', hint: '公示已结束，录取结果已生效。' }
+  }
+  if (store.publicity.published) {
+    return {
+      icon: 'warning',
+      title: '公示中',
+      hint: `你的录取结果正在公示${store.publicity.end ? `，公示期至 ${store.publicity.end}` : ''}；如有异议请线下联系学院教务。`
+    }
+  }
+  return { icon: 'info', title: '已确认去向，待公示', hint: '学院尚未发布公示，发布后这里会显示「公示中」。' }
+})
+
+const historyView = computed(() => {
+  const h = latestAdmission.value
+  if (h?.publicity === 'ENDED') return { icon: 'success', title: `已正式入组（第 ${h.round} 轮）` }
+  if (h?.publicity === 'PUBLISHED') return { icon: 'warning', title: `公示中（第 ${h.round} 轮）` }
+  return { icon: 'success', title: `已录取（第 ${h?.round} 轮）` }
 })
 const status = computed(() =>
   store.studentStatus?.statusText || (store.user ? studentStatus(store.user.id) : ''))
