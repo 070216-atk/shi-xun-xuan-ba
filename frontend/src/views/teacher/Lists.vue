@@ -2,10 +2,11 @@
   <div>
     <div class="page-title">
       名单管理 — {{ lab?.name || '' }}（第 {{ store.round }} 轮）
-      <el-tag v-if="store.currentStage === 6" type="warning" style="margin-left:8px">分轮补录</el-tag>
+      <el-tag v-if="store.currentStage === 5" type="success" style="margin-left:8px">拟录取与学生确认</el-tag>
+      <el-tag v-else-if="store.currentStage === 6" type="warning" style="margin-left:8px">分轮补录</el-tag>
     </div>
     <el-alert v-if="!canSubmit" type="info" :closable="false" style="margin-bottom:16px"
-      title="名单只能在「导师初选与面试考核」或「分轮补录」阶段提交；现在不在开放时间内，可以先看名单，等阶段切换后再提交。" />
+      title="名单只能在「导师初选与面试考核」「拟录取与学生确认」或「分轮补录」阶段提交；现在不在开放时间内，可以先看名单，等阶段切换后再提交。" />
     <el-alert type="warning" :closable="false" style="margin-bottom:16px"
       :title="`拟录取不得超过你个人的名额（${quota} 人）；递补按顺位排序，用于放弃后的自动递补；内部调剂候选用于统筹调剂第一优先级。`" />
 
@@ -54,9 +55,9 @@
         提交三份名单并发出拟录取
       </el-button>
       <p class="muted">
-        {{ store.currentStage === 6
-          ? '分轮补录阶段没有单独的"确认"环节：提交后，只有 1 个拟录取意向的学生会立即自动确认；收到多个意向的学生在本阶段自行选择唯一去向。'
-          : '提交后系统向学生发出拟录取意向；进入「拟录取与学生确认」阶段时，只有 1 个意向的学生会自动确认。' }}
+        {{ store.currentStage === 4
+          ? '提交后系统向学生发出拟录取意向；进入「拟录取与学生确认」阶段时，只有 1 个意向的学生会自动确认。'
+          : '当前已进入「拟录取与学生确认」或补录阶段，提交后只有 1 个拟录取意向的学生会立即自动确认；收到多个意向的学生自行选择唯一去向。' }}
       </p>
     </div>
 
@@ -86,16 +87,16 @@ const admit = ref([])
 const waitlist = ref([])
 const adjust = ref([])
 const saving = ref(false)
-/** 提交名单的窗口：面试考核（4）或分轮补录（6） */
-const canSubmit = computed(() => store.currentStage === 4 || store.currentStage === 6)
+/** 提交名单的窗口：面试考核（4）、拟录取与学生确认（5）、分轮补录（6） */
+const canSubmit = computed(() => [4, 5, 6].includes(store.currentStage))
 
 const interviewed = computed(() =>
   (store.applicants || []).filter(r => r.scoreAttitude != null)
 )
 
-// 分轮补录阶段允许直接录取尚未评分的报名学生，否则新轮次一个都选不了
+// 补录/确认阶段允许直接录取尚未评分的报名学生，否则新轮次一个都选不了
 const candidates = computed(() =>
-  store.currentStage === 6 ? (store.applicants || []) : interviewed.value
+  [5, 6].includes(store.currentStage) ? (store.applicants || []) : interviewed.value
 )
 
 // 已经确认了本导师的学生（可以撤销）
