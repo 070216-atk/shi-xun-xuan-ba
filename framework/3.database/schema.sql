@@ -26,6 +26,7 @@ USE lab_selection;
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS interview_invite;
 DROP TABLE IF EXISTS notice;
 DROP TABLE IF EXISTS notification;
 DROP TABLE IF EXISTS operation_log;
@@ -188,6 +189,7 @@ CREATE TABLE interview_score (
   score_time     TINYINT       NOT NULL COMMENT '时间投入 1-5',
   total        DECIMAL(4,1)    GENERATED ALWAYS AS ((score_attitude + score_logic + score_coding + score_time) / 4) STORED COMMENT '四维均分',
   comment      VARCHAR(500)    DEFAULT NULL COMMENT '评语',
+  showcase     VARCHAR(1000)   DEFAULT NULL COMMENT '学生面试时展示的项目/作品/经历',
   scored_by    BIGINT UNSIGNED NOT NULL COMMENT '评分人 sys_user.id',
   scored_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -205,6 +207,7 @@ CREATE TABLE offer (
   student_id       BIGINT UNSIGNED NOT NULL,
   lab_id           BIGINT UNSIGNED NOT NULL,
   mentor_id        BIGINT UNSIGNED NOT NULL,
+  target_mentor_id BIGINT UNSIGNED DEFAULT NULL COMMENT '内部调剂：导师指定的接收方导师',
   round_no         TINYINT         NOT NULL DEFAULT 1,
   type             ENUM('ADMITTED','WAITLIST','ADJUST_CANDIDATE') NOT NULL
                    COMMENT '拟录取 / 递补 / 内部调剂候选',
@@ -290,6 +293,23 @@ CREATE TABLE notice (
   PRIMARY KEY (id),
   KEY idx_notice (status, is_top, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='通知公告';
+
+-- ------------------------------------------------------------
+-- 14. 面试入围（导师先初选，只有入围者才面试）
+-- ------------------------------------------------------------
+CREATE TABLE interview_invite (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  round_no    TINYINT         NOT NULL DEFAULT 1,
+  lab_id      BIGINT UNSIGNED NOT NULL,
+  mentor_id   BIGINT UNSIGNED NOT NULL COMMENT '发出邀请的导师',
+  student_id  BIGINT UNSIGNED NOT NULL,
+  created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_invite (round_no, mentor_id, student_id) COMMENT '同一导师对同一学生只邀请一次',
+  KEY idx_invite_lab (round_no, lab_id, student_id),
+  CONSTRAINT fk_invite_student FOREIGN KEY (student_id) REFERENCES sys_user (id),
+  CONSTRAINT fk_invite_lab     FOREIGN KEY (lab_id)     REFERENCES lab (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='面试入围（导师初选名单）';
 
 -- ============================================================
 --  学生状态枚举（不建表，由 application + offer + publicity 推导）

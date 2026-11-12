@@ -3,6 +3,8 @@ package com.college.selection.controller;
 import com.college.selection.common.Result;
 import com.college.selection.config.LoginInterceptor;
 import com.college.selection.dto.ApplicantVO;
+import com.college.selection.dto.AutoAdmitReq;
+import com.college.selection.dto.InviteReq;
 import com.college.selection.dto.RevokeReq;
 import com.college.selection.dto.ScoreReq;
 import com.college.selection.dto.TeacherListsReq;
@@ -12,6 +14,7 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /** 导师端：看报名学生、四维评分、提交三份名单 */
 @RestController
@@ -66,5 +69,44 @@ public class TeacherController {
             @RequestBody RevokeReq req) {
         return Result.ok(teacherService.revoke(userId,
                 req.round == null ? 1 : req.round, req.studentId, req.reason));
+    }
+
+    // ---------------- 面试入围 ----------------
+
+    /** 把学生拉进本室面试名单（导师先初选，只有入围者才面试） */
+    @PostMapping("/invites")
+    public Result<Map<String, Object>> invite(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestBody InviteReq req) {
+        return Result.ok(teacherService.invite(userId,
+                req.round == null ? 1 : req.round, req.studentIds));
+    }
+
+    /** 取消入围 */
+    @DeleteMapping("/invites/{studentId}")
+    public Result<Map<String, Object>> uninvite(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @PathVariable Long studentId,
+            @RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(teacherService.uninvite(userId, round, studentId));
+    }
+
+    /** 本室面试名单（入围者的并集） */
+    @GetMapping("/interview-list")
+    public Result<List<ApplicantVO>> interviewList(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(teacherService.interviewList(userId, round));
+    }
+
+    // ---------------- 自动录取 ----------------
+
+    /** 自动录取：按评分或按导师排序录满名额，其余进递补 */
+    @PostMapping("/lists/auto")
+    public Result<Map<String, Object>> autoAdmit(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestBody AutoAdmitReq req) {
+        return Result.ok(teacherService.autoAdmit(userId,
+                req.round == null ? 1 : req.round, req.sortBy));
     }
 }

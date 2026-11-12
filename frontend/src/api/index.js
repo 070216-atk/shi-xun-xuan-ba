@@ -44,6 +44,14 @@ export const getMyResult = (round = 1) => http.get(`/student/result?round=${roun
 // ---------------- 导师端 ----------------
 
 export const getApplicants = (round = 1) => http.get(`/teacher/applicants?round=${round}`)
+/** 本室面试名单（入围者的并集） */
+export const getInterviewList = (round = 1) => http.get(`/teacher/interview-list?round=${round}`)
+/** 把学生拉进面试名单 */
+export const inviteStudents = (body) => http.post('/teacher/invites', body)
+/** 取消入围 */
+export const uninviteStudent = (studentId, round = 1) => http.del(`/teacher/invites/${studentId}?round=${round}`)
+/** 自动录取：sortBy = score | manual */
+export const autoAdmit = (body) => http.post('/teacher/lists/auto', body)
 /** body: { round, attitude, logic, coding, time, comment } */
 export const saveScore = (studentId, body) => http.put(`/teacher/scores/${studentId}`, body)
 export const getTeacherLists = (round = 1) => http.get(`/teacher/lists?round=${round}`)

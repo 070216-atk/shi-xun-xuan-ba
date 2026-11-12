@@ -18,7 +18,13 @@
             <el-option v-for="r in candidates" :key="r.code" :value="r.code"
               :label="`${r.realName}（均分 ${r.scoreTotal ?? '—'}）`"
               :disabled="waitlist.includes(r.code) || adjust.includes(r.code)" />
-          </el-select>
+          </el-select>          <div v-for="(code, i) in admit" :key="'a' + code" class="rank-row">
+            <span>第 {{ i + 1 }} 顺位：{{ nameOf(code) }}</span>
+            <span>
+              <el-button size="small" :disabled="i === 0" @click="moveIn('admit', i, -1)">↑</el-button>
+              <el-button size="small" :disabled="i === admit.length - 1" @click="moveIn('admit', i, 1)">↓</el-button>
+            </span>
+          </div>
         </div>
       </el-col>
       <el-col :xs="24" :md="8">
@@ -61,6 +67,16 @@
       </p>
     </div>
 
+    <div class="card">
+      <div class="page-title">自动录取（可选）</div>
+      <p class="muted">
+        默认是你手动挑选。如果嫌麻烦，可以让系统按顺序录满你的名额（{{ quota }} 人），剩下的人自动进递补。
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <el-button :loading="autoing" @click="doAuto('score')">按面试评分自动录取</el-button>
+        <el-button :loading="autoing" @click="doAuto('manual')">按我当前的排序自动录取</el-button>
+      </div>
+    </div>
     <div v-if="confirmed.length" class="card">
       <div class="page-title">已确认名单（可撤销）</div>
       <p class="muted">撤销后名额立即释放，并按递补顺位自动补位；每次撤销都会写入操作日志。</p>
@@ -75,7 +91,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { store, labById, loadTeacher, submitLists, revokeAdmit } from '../../store'
+import { store, labById, loadTeacher, submitLists, revokeAdmit, autoAdmit } from '../../store'
 
 const lab = computed(() => labById(store.user?.labId))
 const quota = computed(() => {
@@ -139,6 +155,10 @@ function nameOf(code) {
   const r = (store.applicants || []).find(x => x.code === code)
   return r ? r.realName : code
 }
+function moveIn(which, i, dir) {
+  const arr = which === 'admit' ? admit.value : waitlist.value
+  ;[arr[i], arr[i + dir]] = [arr[i + dir], arr[i]]
+}
 function move(i, dir) {
   const arr = waitlist.value
   ;[arr[i], arr[i + dir]] = [arr[i + dir], arr[i]]
@@ -154,6 +174,27 @@ async function loadLists() {
   }
 }
 
+const autoing = ref(false)
+
+async function doAuto(sortBy) {
+  const label = sortBy === 'score' ? '面试评分' : '你当前的排序'
+  try {
+    await ElMessageBox.confirm(
+      `按${label}自动录取？会覆盖你当前的名单，录满名额（${quota.value} 人）为止，其余进递补。`,
+      '自动录取', { type: 'warning', confirmButtonText: '开始', cancelButtonText: '取消' }
+    )
+  } catch { return }
+  autoing.value = true
+  try {
+    const r = await autoAdmit(sortBy)
+    ElMessage.success(`自动录取完成：拟录取 ${r.admitted} 人，递补 ${r.waitlist} 人`)
+    await loadLists()
+  } catch (e) {
+    ElMessage.error(e.message || '自动录取失败')
+  } finally {
+    autoing.value = false
+  }
+}
 async function submit() {
   if (!admit.value.length) return ElMessage.warning('拟录取名单不能为空')
   if (admit.value.length > quota.value) return ElMessage.error('拟录取人数超过你自己的名额')

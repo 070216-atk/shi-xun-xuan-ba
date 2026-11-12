@@ -22,6 +22,13 @@ public class ApplicantVO {
     public Integer scoreTime;
     public Double scoreTotal;
     public String scoreComment;
+    /** 面试时展示的项目/作品/经历（导师录入） */
+    public String showcase;
 
     public Boolean interviewed;
+
+    /** 本室是否已把这名学生拉进面试名单 */
+    public Boolean invited;
+    /** 是否是我（当前登录导师）拉进来的 */
+    public Boolean invitedByMe;
 }

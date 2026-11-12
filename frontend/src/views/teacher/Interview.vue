@@ -3,7 +3,7 @@
     <div class="page-title">面试评价 — {{ lab?.name || '' }}（第 {{ store.round }} 轮）</div>
     <div class="card">
       <el-alert type="info" :closable="false"
-        title="四个维度各 1–5 分：学习态度、逻辑思维、编程基础、时间投入。评分保存后可修改。"
+        title="四个维度各 1–5 分：学习态度、逻辑思维、编程基础、时间投入。这里只显示已入围本室面试名单的学生；评分保存后可修改。"
         style="margin-bottom:12px" />
       <el-table :data="rows" size="small">
         <el-table-column prop="realName" label="姓名" width="90" />
@@ -11,6 +11,12 @@
         <el-table-column v-for="d in dims" :key="d.key" :label="d.label" width="150">
           <template #default="{ row }">
             <el-rate v-model="draft(row.code)[d.key]" :max="5" />
+          </template>
+        </el-table-column>
+        <el-table-column label="学生展示（项目/作品/经历）" min-width="200">
+          <template #default="{ row }">
+            <el-input v-model="draft(row.code).showcase" size="small" type="textarea" :rows="2"
+              placeholder="学生现场展示的内容" />
           </template>
         </el-table-column>
         <el-table-column label="评语" min-width="180">
@@ -35,7 +41,7 @@ import { ElMessage } from 'element-plus'
 import { store, labById, loadTeacher, saveScore } from '../../store'
 
 const lab = computed(() => labById(store.user?.labId))
-const rows = computed(() => store.applicants || [])
+const rows = computed(() => store.interviewList || [])
 const dims = [
   { key: 'attitude', label: '学习态度' },
   { key: 'logic', label: '逻辑思维' },
@@ -52,7 +58,8 @@ function draft(code) {
       logic: a.scoreLogic || 0,
       coding: a.scoreCoding || 0,
       time: a.scoreTime || 0,
-      comment: a.scoreComment || ''
+      comment: a.scoreComment || '',
+      showcase: a.showcase || ''
     }
   }
   return drafts[code]
@@ -67,7 +74,8 @@ async function save(row) {
       logic: d.logic,
       coding: d.coding,
       time: d.time,
-      comment: d.comment
+      comment: d.comment,
+      showcase: d.showcase
     })
     delete drafts[row.code]
     ElMessage.success(`已保存 ${row.realName} 的面试评价`)

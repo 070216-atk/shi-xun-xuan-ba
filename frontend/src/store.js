@@ -27,6 +27,7 @@ export const store = reactive({
   notifications: [],
   quotas: [],         // 管理端：/admin/quotas 的原样数据
   applicants: [],     // 导师端：本室报名学生（后端原样）
+  interviewList: [],  // 导师端：本室面试名单（入围者的并集）
   pool: { vacancies: [], candidates: [] },
   results: [],        // 管理端：已确认的最终名单
   publicityList: [],  // 公示名单（公开接口）
@@ -311,11 +312,14 @@ export function studentStatus(studentId) {
 // ---------------- 导师端 ----------------
 
 export async function loadTeacher() {
-  const [list, lists] = await Promise.all([
+  const [list, lists, interviewList] = await Promise.all([
     api.getApplicants(store.round),
-    api.getTeacherLists(store.round)
+    api.getTeacherLists(store.round),
+    api.getInterviewList(store.round).catch(() => [])
   ])
   store.applicants = list
+  // 面试名单（入围者的并集）：评分页和名单页只认这批人
+  store.interviewList = interviewList || []
   indexStudents(
     list.map((a) => ({
       studentId: a.studentId,
@@ -560,6 +564,35 @@ export async function revokeAdmit(studentCode, reason) {
   const sid = codeToId[studentCode]
   if (!sid) throw new Error('找不到该学生')
   const r = await api.revokeAdmit({ round: store.round, studentId: sid, reason })
+  await loadTeacher()
+  return r
+}
+
+// ---------------- 面试入围 ----------------
+
+/** 把若干学生拉进本室面试名单 */
+export async function inviteStudents(codes) {
+  const ids = codes.map((c) => codeToId[c]).filter(Boolean)
+  if (!ids.length) throw new Error('没有可用的学生')
+  const r = await api.inviteStudents({ round: store.round, studentIds: ids })
+  await loadTeacher()
+  return r
+}
+
+/** 取消某个学生的入围 */
+export async function uninviteStudent(code) {
+  const sid = codeToId[code]
+  if (!sid) throw new Error('找不到该学生')
+  const r = await api.uninviteStudent(sid, store.round)
+  await loadTeacher()
+  return r
+}
+
+// ---------------- 自动录取 ----------------
+
+/** sortBy: 'score' 按面试总分 | 'manual' 按导师已有排序 */
+export async function autoAdmit(sortBy = 'score') {
+  const r = await api.autoAdmit({ round: store.round, sortBy })
   await loadTeacher()
   return r
 }

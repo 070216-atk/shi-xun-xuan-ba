@@ -6,9 +6,11 @@ import com.college.selection.dto.ApplicantVO;
 import com.college.selection.dto.ScoreReq;
 import com.college.selection.dto.TeacherListsReq;
 import com.college.selection.dto.TeacherListsVO;
+import com.college.selection.entity.InterviewInvite;
 import com.college.selection.entity.Offer;
 import com.college.selection.entity.SysUser;
 import com.college.selection.mapper.ApplicationMapper;
+import com.college.selection.mapper.InterviewInviteMapper;
 import com.college.selection.mapper.MentorMapper;
 import com.college.selection.mapper.OfferMapper;
 import com.college.selection.mapper.OperationLogMapper;
@@ -20,7 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class TeacherService {
@@ -38,19 +43,22 @@ public class TeacherService {
     private final SysUserMapper userMapper;
     private final StageService stageService;
     private final OperationLogMapper logMapper;
+    private final InterviewInviteMapper inviteMapper;
 
     public TeacherService(TeacherMapper teacherMapper,
                           OfferMapper offerMapper,
                           ApplicationMapper applicationMapper,
                           SysUserMapper userMapper,
                           StageService stageService,
-                          OperationLogMapper logMapper) {
+                          OperationLogMapper logMapper,
+                          InterviewInviteMapper inviteMapper) {
         this.teacherMapper = teacherMapper;
         this.offerMapper = offerMapper;
         this.applicationMapper = applicationMapper;
         this.userMapper = userMapper;
         this.stageService = stageService;
         this.logMapper = logMapper;
+        this.inviteMapper = inviteMapper;
     }
 
     /** 取出当前登录的导师，校验角色和绑定关系 */
@@ -68,8 +76,70 @@ public class TeacherService {
     public List<ApplicantVO> applicants(Long teacherId, Integer round) {
         SysUser t = requireTeacher(teacherId);
         List<ApplicantVO> list = teacherMapper.findApplicants(t.labId, round);
+
+        // 打上"本室已入围""是我拉进来的"标记，前端据此显示面试范围
+        List<Long> labInvited = inviteMapper.findInvitedStudentIds(t.labId, round);
+        List<Long> mine = inviteMapper.findInvitedByMentor(t.mentorId, round);
+
         for (ApplicantVO a : list) {
             a.interviewed = a.scoreAttitude != null;
+            a.invited = labInvited.contains(a.studentId);
+            a.invitedByMe = mine.contains(a.studentId);
+        }
+        return list;
+    }
+
+    // ---------------- 面试入围 ----------------
+
+    /**
+     * 把学生拉进本室面试名单。
+     * 实际流程是"导师先初选一部分人让他来面试"，不是所有人都面试，所以先入围再评分。
+     */
+    @Transactional
+    public Map<String, Object> invite(Long teacherId, Integer round, List<Long> studentIds) {
+        SysUser t = requireTeacher(teacherId);
+        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_REFILL);
+        if (studentIds == null || studentIds.isEmpty()) {
+            throw new BizException(2007, "请先选择要拉进面试名单的学生");
+        }
+
+        int added = 0;
+        for (Long sid : studentIds) {
+            if (teacherMapper.countAppliedToLab(sid, t.labId, round) == 0) {
+                throw new BizException(2007, who(sid) + " 没有报名本实训室，不能拉进面试名单");
+            }
+            InterviewInvite iv = new InterviewInvite();
+            iv.roundNo = round;
+            iv.labId = t.labId;
+            iv.mentorId = t.mentorId;
+            iv.studentId = sid;
+            added += inviteMapper.insert(iv);
+        }
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("added", added);
+        m.put("total", inviteMapper.findInvitedStudentIds(t.labId, round).size());
+        return m;
+    }
+
+    @Transactional
+    public Map<String, Object> uninvite(Long teacherId, Integer round, Long studentId) {
+        SysUser t = requireTeacher(teacherId);
+        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_REFILL);
+        inviteMapper.delete(round, t.mentorId, studentId);
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("total", inviteMapper.findInvitedStudentIds(t.labId, round).size());
+        return m;
+    }
+
+    /** 本室面试名单（入围者的并集），只有这些人能评分、能进三份名单 */
+    public List<ApplicantVO> interviewList(Long teacherId, Integer round) {
+        SysUser t = requireTeacher(teacherId);
+        List<ApplicantVO> list = inviteMapper.findInterviewList(t.labId, round);
+        for (ApplicantVO a : list) {
+            a.interviewed = a.scoreAttitude != null;
+            a.invited = true;
         }
         return list;
     }
@@ -170,6 +240,18 @@ public class TeacherService {
                 throw new BizException(2007, who(studentId) + " 没有报名本实训室");
             }
         }
+
+        // 面试阶段：只有入围的人才能进三份名单（实际流程是导师先初选一部分人来面试）
+        if (stageService.isOpen(round, STAGE_INTERVIEW)) {
+            List<Long> invited = inviteMapper.findInvitedStudentIds(t.labId, round);
+            for (Long sid : allStudents) {
+                if (!invited.contains(sid)) {
+                    throw new BizException(2007,
+                            who(sid) + " 还没有进入本室面试名单，不能写入名单（请先在「报名学生」里拉进面试）");
+                }
+            }
+        }
+
         for (Long studentId : admitted) {
             if (offerMapper.countAnyConfirmed(studentId, round) > 0) {
                 throw new BizException(2007, who(studentId) + " 已确认了其他导师，不能再发拟录取");
@@ -177,8 +259,9 @@ public class TeacherService {
         }
 
         List<Offer> inserted = new ArrayList<>();
-        for (Long studentId : admitted) {
-            inserted.add(insert(t, round, studentId, "ADMITTED", null, now, deadline));
+        for (int i = 0; i < admitted.size(); i++) {
+            // 拟录取也带顺位（1 为第一顺位），自动录取和递补都按这个顺序
+            inserted.add(insert(t, round, admitted.get(i), "ADMITTED", i + 1, now, deadline));
         }
         for (int i = 0; i < waitlist.size(); i++) {
             inserted.add(insert(t, round, waitlist.get(i), "WAITLIST", i + 1, now, deadline));
@@ -206,6 +289,70 @@ public class TeacherService {
                 }
             }
         }
+    }
+
+    /**
+     * 自动录取。
+     *
+     * 默认是导师人工挑选；这个接口给"省时省心"的场景用：
+     *   sortBy = score  → 按面试总分从高到低
+     *   sortBy = manual → 按导师已有的排序（rank_no），没排过的按分数排在后面
+     * 录满名额为止，剩下的人自动进递补。
+     */
+    @Transactional
+    public Map<String, Object> autoAdmit(Long teacherId, Integer round, String sortBy) {
+        SysUser t = requireTeacher(teacherId);
+        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_CONFIRM, STAGE_REFILL);
+
+        Integer quota = offerMapper.lockMentorQuota(t.mentorId);
+        if (quota == null) {
+            throw new BizException(ErrorCode.NO_PERMISSION, "导师档案不存在");
+        }
+
+        // 候选池 = 本室面试名单；findInterviewList 已按分数从高到低排（未评分在最后）
+        List<ApplicantVO> pool = inviteMapper.findInterviewList(t.labId, round);
+        if (pool.isEmpty()) {
+            throw new BizException(2007, "本室还没有面试名单，请先在「报名学生」里把学生拉进面试");
+        }
+
+        List<Long> ordered = new ArrayList<>();
+        for (ApplicantVO a : pool) {
+            ordered.add(a.studentId);
+        }
+
+        if ("manual".equalsIgnoreCase(sortBy)) {
+            Map<Long, Integer> rank = new LinkedHashMap<>();
+            for (Offer o : offerMapper.findByMentor(t.mentorId, round)) {
+                if (o.rankNo != null) {
+                    rank.put(o.studentId, o.rankNo);
+                }
+            }
+            ordered.sort(Comparator.comparingInt(sid -> rank.getOrDefault(sid, Integer.MAX_VALUE)));
+        }
+
+        List<Long> admitted = new ArrayList<>();
+        List<Long> waitlist = new ArrayList<>();
+        for (int i = 0; i < ordered.size(); i++) {
+            if (i < quota) {
+                admitted.add(ordered.get(i));
+            } else {
+                waitlist.add(ordered.get(i));
+            }
+        }
+
+        TeacherListsReq req = new TeacherListsReq();
+        req.round = round;
+        req.admitted = admitted;
+        req.waitlist = waitlist;
+        req.adjustCandidates = new ArrayList<>();
+        saveLists(teacherId, round, req);
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("sortBy", sortBy == null || sortBy.isBlank() ? "score" : sortBy);
+        m.put("quota", quota);
+        m.put("admitted", admitted.size());
+        m.put("waitlist", waitlist.size());
+        return m;
     }
 
     /** 把数字 id 换成人看得懂的名字，别在报错里甩 ID */

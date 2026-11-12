@@ -31,7 +31,8 @@ public interface TeacherMapper {
                    MAX(s.score_coding)   AS score_coding,
                    MAX(s.score_time)     AS score_time,
                    MAX(s.total)          AS score_total,
-                   MAX(s.comment)        AS score_comment
+                   MAX(s.comment)        AS score_comment,
+                   MAX(s.showcase)       AS showcase
               FROM application a
               JOIN application_item ai ON ai.application_id = a.id
               JOIN sys_user u          ON u.id = a.student_id
