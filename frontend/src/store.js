@@ -12,6 +12,7 @@ import { clearToken, getToken } from './api/http'
 export const store = reactive({
   user: null,
   round: 1,
+  rounds: [],         // [{ roundNo, status }]，数据从 /api/rounds 来
   currentStage: 0,
   stageDeadline: 0,
 
@@ -22,7 +23,7 @@ export const store = reactive({
   finalResults: {},   // 学号 -> 实训室id
   adjustLog: [],
   talkRecords: [],
-  publicity: { published: false, start: null, ended: false },
+  publicity: { published: false, start: null, end: null, ended: false },
   notifications: [],
   quotas: [],         // 管理端：/admin/quotas 的原样数据
   applicants: [],     // 导师端：本室报名学生（后端原样）
@@ -66,6 +67,31 @@ function indexStudents(list) {
 }
 
 // ---------------- 公开数据 ----------------
+
+/**
+ * 拉轮次列表。preferOpen=true 时（启动/刷新页面）自动落到"进行中"的那一轮，
+ * 这样管理员开启第 2 轮后刷新页面，看到的仍然是第 2 轮，而不是又被拉回第 1 轮。
+ */
+export async function loadRounds(preferOpen = false) {
+  const list = (await api.getRounds()) || []
+  store.rounds = list
+  if (preferOpen && list.length) {
+    const open = list.find((r) => r.status === 'OPEN')
+    store.round = open ? open.roundNo : list[list.length - 1].roundNo
+  }
+  return store.rounds
+}
+
+/** 手动切轮次：公开数据 + 当前角色自己的数据都重新按新一轮加载 */
+export async function setRound(round) {
+  if (round === store.round) return
+  store.round = round
+  await loadPublic()
+  const role = store.user?.role
+  if (role === 'student') await loadStudent()
+  else if (role === 'teacher') await loadTeacher()
+  else if (role === 'admin') await loadAdmin()
+}
 
 export async function loadPublic() {
   const [ls, ss] = await Promise.all([api.getLabs(store.round), api.getStages(store.round)])
@@ -160,6 +186,16 @@ export async function restoreSession() {
   }
 }
 
+/**
+ * 整页刷新时只恢复一次登录态。
+ * 路由守卫和 main.js 都等它，避免守卫先跑、user 还是 null，被踢回登录页。
+ */
+let bootPromise = null
+export function ensureSession() {
+  if (!bootPromise) bootPromise = restoreSession().catch(() => null)
+  return bootPromise
+}
+
 export function logout() {
   clearToken()
   store.user = null
@@ -189,6 +225,7 @@ export async function loadStudent() {
     store.publicity = {
       published: st.publicity === 'PUBLISHED' || st.publicity === 'ENDED',
       start: null,
+      end: null,
       ended: st.publicity === 'ENDED'
     }
   }
@@ -216,6 +253,29 @@ export async function loadStudent() {
   const conf = offers.find((o) => o.status === 'CONFIRMED')
   if (conf) store.finalResults[sid] = conf.labId
   else delete store.finalResults[sid]
+}
+
+/** 往轮录取记录（切换补录轮后，学生仍能看到前面几轮的去向） */
+export async function loadFinalHistory() {
+  const sid = store.user?.id
+  if (!sid) return []
+  const max = Math.max(store.round, 1)
+  const out = []
+  for (let r = 1; r <= max; r++) {
+    const offers = await api.getMyOffers(r).catch(() => [])
+    const conf = offers.find((o) => o.status === 'CONFIRMED')
+    if (!conf) continue
+    // 公示状态按"录取所在轮"查，否则学生切到下一轮时就看不到公示中了
+    const pub = await api.getPublicPublicity(r).catch(() => null)
+    out.push({
+      round: r,
+      labId: conf.labId,
+      labName: conf.labName,
+      mentorName: conf.mentorName,
+      publicity: pub ? pub.status : null
+    })
+  }
+  return out
 }
 
 /** items: [{ labId, mentorId }] */
@@ -325,6 +385,17 @@ export async function submitLists({ admit, waitlist, adjust }) {
 
 // ---------------- 管理端 ----------------
 
+/**
+ * 选中的轮次必须还在进行中才能做会改动选拔结果的操作。
+ * 顶栏可以切到已结束的轮次去查看历史，但那时不该再往里写数据。
+ */
+function assertRoundOpen() {
+  const st = store.rounds.find((r) => r.roundNo === store.round)?.status
+  if (st && st !== 'OPEN') {
+    throw new Error(`第 ${store.round} 轮已结束，不能在已结束的轮次上操作，请先在右上角切换到进行中的轮次`)
+  }
+}
+
 export async function loadAdmin() {
   const [qs, list, pool, db, results] = await Promise.all([
     api.getQuotas(store.round),
@@ -379,6 +450,7 @@ export async function loadAdmin() {
 }
 
 export async function doAdjust(level, mentorId, studentCodes, conclusion) {
+  assertRoundOpen()
   const studentIds = studentCodes.map((c) => codeToId[c])
   const body = { round: store.round, mentorId, studentIds, conclusion }
   if (level === 1) await api.adjustInternal(body)
@@ -388,6 +460,7 @@ export async function doAdjust(level, mentorId, studentCodes, conclusion) {
 }
 
 export async function switchStage(stageNo, hours = 4) {
+  assertRoundOpen()
   // 后端会先把本轮其他阶段全部关掉，再打开目标阶段，避免多个阶段同时开放；
   // 切到「拟录取与学生确认」时后端还会顺便结算（1 个意向自动确认，多个等学生选）
   const r = await api.switchStage({ round: store.round, stageNo, hours })
@@ -396,9 +469,20 @@ export async function switchStage(stageNo, hours = 4) {
 }
 
 export async function openNextRound() {
-  await api.openRound(store.round + 1)
-  store.round += 1
+  const next = store.round + 1
+  await api.openRound(next)
+  await loadRounds()
+  store.round = next
   await loadPublic()
+  await loadAdmin()
+}
+
+/** 手动结算拟录取（分轮补录没有「拟录取确认」阶段，导师发完名单后由管理员点一次） */
+export async function settleRound() {
+  assertRoundOpen()
+  const r = await api.settleOffers(store.round)
+  await loadAdmin()
+  return r
 }
 
 export async function publishPublicity() {
@@ -409,6 +493,7 @@ export async function publishPublicity() {
 
 /** 公布剩余名额（后端会写一条操作日志） */
 export async function publishQuotas() {
+  assertRoundOpen()
   const r = await api.publishQuotas(store.round)
   await loadAdmin()
   return r
@@ -418,9 +503,11 @@ export async function publishQuotas() {
 export async function loadPublicity() {
   const p = await api.getPublicPublicity(store.round)
   if (p) {
-    store.publicity = { published: true, start: fmt(p.startAt), ended: p.status === 'ENDED' }
+    store.publicity = { published: true, start: fmt(p.startAt), end: fmt(p.endAt), ended: p.status === 'ENDED' }
     store.publicityList = p.list || []
   } else {
+    // 换到还没公示的轮次时要把上一轮的"公示中"清掉，否则页面会一直挂着旧状态
+    store.publicity = { published: false, start: null, end: null, ended: false }
     store.publicityList = []
   }
   return p

@@ -59,6 +59,17 @@ public class StageService {
         return null;
     }
 
+    /** 某个环节此刻是否开放（不抛异常，给"分情况处理"的地方用） */
+    public boolean isOpen(Integer round, Integer stageNo) {
+        LocalDateTime now = LocalDateTime.now();
+        for (Stage s : stageMapper.findByRound(round)) {
+            if (s.stageNo.equals(stageNo)) {
+                return !now.isBefore(s.startAt) && !now.isAfter(s.endAt);
+            }
+        }
+        return false;
+    }
+
     /**
      * 校验某个环节此刻是否开放，不开放直接抛 2001。
      * 所有"学生能不能提交/确认"的判断都要经过这里，不要在别处重复写时间比较。
@@ -80,9 +91,43 @@ public class StageService {
                 "第 " + round + " 轮的第 " + stageNo + " 阶段还没有配置时间窗");
     }
 
+    /**
+     * 多个环节任一开放即放行（如意向填报 3 与分轮补录 6 都允许学生报名）。
+     * 全都不开放时，报第一个已配置环节的时间窗。
+     */
+    public void assertAnyOpen(Integer round, Integer... stageNos) {
+        LocalDateTime now = LocalDateTime.now();
+        List<Stage> stages = stageMapper.findByRound(round);
+        String firstError = null;
+
+        for (Integer stageNo : stageNos) {
+            Stage matched = null;
+            for (Stage s : stages) {
+                if (s.stageNo.equals(stageNo)) {
+                    matched = s;
+                    break;
+                }
+            }
+            if (matched == null) {
+                if (firstError == null) {
+                    firstError = "第 " + round + " 轮的第 " + stageNo + " 阶段还没有配置时间窗";
+                }
+                continue;
+            }
+            if (!now.isBefore(matched.startAt) && !now.isAfter(matched.endAt)) {
+                return;
+            }
+            if (firstError == null) {
+                firstError = String.format("当前不在「%s」的开放时间内（%s 至 %s）",
+                        matched.name, matched.startAt.format(FMT), matched.endAt.format(FMT));
+            }
+        }
+
+        throw new BizException(ErrorCode.OUT_OF_WINDOW, firstError);
+    }
+
     /** 取某阶段的结束时间，没配置返回 null（用在 offer 的确认截止时间上） */
-    public LocalDateTime getEndAt(Integer round, Integer stageNo) {
-        for (Stage s : stageMapper.findByRound(round)) {
+    public LocalDateTime getEndAt(Integer round, Integer stageNo) {        for (Stage s : stageMapper.findByRound(round)) {
             if (s.stageNo.equals(stageNo)) {
                 return s.endAt;
             }

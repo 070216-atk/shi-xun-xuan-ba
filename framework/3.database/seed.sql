@@ -129,7 +129,15 @@ INSERT INTO sys_user (username, password_hash, role, code, real_name, class_name
 ('student02', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023002', '王芳', '计科2301', NULL, NULL),
 ('student03', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023003', '陈晨', '软件2302', NULL, NULL),
 ('student04', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023004', '赵磊', '软件2302', NULL, NULL),
-('student05', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023005', '孙悦', '计科2303', NULL, NULL);
+('student05', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023005', '孙悦', '计科2303', NULL, NULL),
+('student06', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023006', '周航', '计科2303', NULL, NULL),
+('student07', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023007', '吴迪', '软件2301', NULL, NULL),
+('student08', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023008', '郑可', '计科2302', NULL, NULL),
+('student09', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023009', '林悦', '软件2303', NULL, NULL),
+('student10', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023010', '何静', '计科2301', NULL, NULL),
+('student11', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023011', '马超', '软件2301', NULL, NULL),
+('student12', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023012', '许晴', '计科2302', NULL, NULL),
+('student13', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023013', '高远', '软件2303', NULL, NULL);
 
 -- ------------------------------------------------------------
 -- 选拔轮次

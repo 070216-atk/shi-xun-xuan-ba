@@ -6,8 +6,10 @@ import com.college.selection.dto.ApplicationReq;
 import com.college.selection.entity.Application;
 import com.college.selection.entity.ApplicationItem;
 import com.college.selection.entity.Mentor;
+import com.college.selection.entity.Offer;
 import com.college.selection.mapper.ApplicationMapper;
 import com.college.selection.mapper.MentorMapper;
+import com.college.selection.mapper.OfferMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,19 +22,23 @@ import java.util.Set;
 @Service
 public class ApplicationService {
 
-    /** 意向填报对应流程图第 3 个环节 */
+    /** 意向填报（第 3 环节）与分轮补录（第 6 环节）都可以报名 */
     private static final int STAGE_APPLY = 3;
+    private static final int STAGE_REFILL = 6;
     private static final int MAX_ITEMS = 3;
 
     private final ApplicationMapper appMapper;
     private final MentorMapper mentorMapper;
+    private final OfferMapper offerMapper;
     private final StageService stageService;
 
     public ApplicationService(ApplicationMapper appMapper,
                               MentorMapper mentorMapper,
+                              OfferMapper offerMapper,
                               StageService stageService) {
         this.appMapper = appMapper;
         this.mentorMapper = mentorMapper;
+        this.offerMapper = offerMapper;
         this.stageService = stageService;
     }
 
@@ -53,8 +59,15 @@ public class ApplicationService {
     public void save(Long studentId, ApplicationReq req) {
         int round = req.round == null ? 1 : req.round;
 
-        // 1. 服务端时间窗，前端倒计时不作数
-        stageService.assertOpen(round, STAGE_APPLY);
+        // 0. 已经在前面某一轮被录取的学生不再参与后续轮次
+        Offer admitted = offerMapper.findConfirmedUpTo(studentId, round);
+        if (admitted != null) {
+            throw new BizException(ErrorCode.TOO_MANY_INTENTS,
+                    "你已在第 " + admitted.roundNo + " 轮被录取（" + admitted.labName + "），不能再填报意向");
+        }
+
+        // 1. 服务端时间窗，前端倒计时不作数（意向填报或分轮补录均放行）
+        stageService.assertAnyOpen(round, STAGE_APPLY, STAGE_REFILL);
 
         // 2. 两个调剂意愿必须都选（是 / 否），不能留空
         if (req.adjustInLab == null || req.adjustCross == null) {

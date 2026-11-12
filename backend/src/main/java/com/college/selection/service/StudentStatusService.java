@@ -68,10 +68,25 @@ public class StudentStatusService {
         boolean publicityOpen = pub != null && "PUBLISHED".equals(pub.status);
         vo.publicity = publicityEnded ? "ENDED" : publicityOpen ? "PUBLISHED" : "NONE";
 
+        // 本轮没有确认记录时，回看前面几轮：录取是终局状态，后续轮次不再填报
+        Offer earlier = confirmed ? null : offerMapper.findConfirmedUpTo(studentId, round);
+
         if (confirmed && publicityEnded) {
             set(vo, "ADMITTED", "已正式入组");
+            vo.admittedRound = round;
         } else if (confirmed) {
             set(vo, "CONFIRMED", publicityOpen ? "已确认去向，公示中" : "已确认去向");
+            vo.admittedRound = round;
+        } else if (earlier != null) {
+            Publicity ep = adminMapper.latestPublicity(earlier.roundNo);
+            boolean earlierEnded = ep != null && "ENDED".equals(ep.status);
+            boolean earlierOpen = ep != null && "PUBLISHED".equals(ep.status);
+            vo.admittedRound = earlier.roundNo;
+            vo.admittedLabName = earlier.labName;
+            set(vo, earlierEnded ? "ADMITTED" : "CONFIRMED",
+                    "已在第 " + earlier.roundNo + " 轮被录取（" + earlier.labName + "）"
+                            + (earlierEnded ? "，公示已结束" : earlierOpen ? "，公示中" : "，待公示")
+                            + "，无需再填报");
         } else if (admittedIssued) {
             set(vo, "OFFERED", "已获得拟录取，请在截止前选择唯一去向");
         } else if (waitlist) {

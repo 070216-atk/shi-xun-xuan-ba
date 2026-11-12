@@ -18,6 +18,8 @@ public class OfferService {
 
     /** 拟录取与学生确认对应流程图第 5 个环节 */
     private static final int STAGE_CONFIRM = 5;
+    /** 分轮补录：补录轮里发拟录取和确认学生都在这一环节完成 */
+    private static final int STAGE_REFILL = 6;
 
     private final OfferMapper offerMapper;
     private final StageService stageService;
@@ -65,9 +67,9 @@ public class OfferService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        // 确认窗口以"阶段 5 当前是否开放"为准。
+        // 确认窗口以"阶段 5 或分轮补录是否开放"为准。
         // 不用 offer.confirm_deadline 判断：那个值是发名单时算的，那时阶段 5 可能还没配置。
-        stageService.assertOpen(offer.roundNo, STAGE_CONFIRM);
+        stageService.assertAnyOpen(offer.roundNo, STAGE_CONFIRM, STAGE_REFILL);
 
         Integer quota = offerMapper.lockMentorQuota(offer.mentorId);
         // 这里能安全地用普通 COUNT，是因为本方法把隔离级别降到了 READ COMMITTED：

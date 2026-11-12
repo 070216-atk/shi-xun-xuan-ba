@@ -3,6 +3,8 @@
     <div class="page-title">流程配置</div>
     <el-alert type="info" :closable="false" style="margin-bottom:16px"
       title="时间窗以服务器时间为准。「切换到该阶段」会把该阶段设成现在开始、4 小时后结束，用于演示。" />
+    <el-alert v-if="!roundOpen" type="warning" :closable="false" style="margin-bottom:16px"
+      :title="`第 ${store.round} 轮已结束，只能查看；要调阶段请先在右上角切到进行中的轮次。`" />
     <div class="card">
       <el-table :data="stages" size="small">
         <el-table-column prop="id" label="#" width="50" />
@@ -17,7 +19,8 @@
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="!row.open" size="small" type="primary" plain @click="switchTo(row)">切换到该阶段</el-button>
+            <el-button v-if="!row.open" size="small" type="primary" plain :disabled="!roundOpen"
+              @click="switchTo(row)">切换到该阶段</el-button>
             <span v-else class="muted">进行中</span>
           </template>
         </el-table-column>
@@ -32,9 +35,11 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { stages, store, loadPublic, switchStage } from '../../store'
+
+const roundOpen = computed(() => store.rounds.find(r => r.roundNo === store.round)?.status === 'OPEN')
 
 async function switchTo(row) {
   try {

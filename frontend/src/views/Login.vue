@@ -53,7 +53,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { login, loadPublic } from '../store'
+import { login, loadPublic, loadRounds } from '../store'
 
 const router = useRouter()
 const username = ref('')
@@ -64,6 +64,14 @@ const open = ref(false)
 const accounts = [
   { u: 'student01', role: '学生', who: '李明' },
   { u: 'student02', role: '学生', who: '王芳' },
+  { u: 'student06', role: '学生', who: '周航' },
+  { u: 'student07', role: '学生', who: '吴迪' },
+  { u: 'student08', role: '学生', who: '郑可' },
+  { u: 'student09', role: '学生', who: '林悦' },
+  { u: 'student10', role: '学生', who: '何静' },
+  { u: 'student11', role: '学生', who: '马超' },
+  { u: 'student12', role: '学生', who: '许晴' },
+  { u: 'student13', role: '学生', who: '高远' },
   { u: 'teacher01', role: '导师', who: '刘冠军 · 202 室' },
   { u: 'teacher03', role: '导师', who: '高璇 · 404 室' }
 ]
@@ -83,6 +91,7 @@ async function onLogin() {
     const r = await login(username.value.trim(), password.value, 'web')
     if (r === 'fail') return ElMessage.error('账号或密码错误')
     if (r === 'forbidden') return ElMessage.error('管理员账号请从「管理后台」入口登录')
+    await loadRounds(true)
     await loadPublic()
     ElMessage.success('登录成功')
     router.push('/')

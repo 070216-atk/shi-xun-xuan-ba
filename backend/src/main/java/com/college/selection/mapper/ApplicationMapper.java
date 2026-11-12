@@ -22,6 +22,14 @@ public interface ApplicationMapper {
             """)
     List<ApplicationItem> findItems(@Param("appId") Long appId);
 
+    /** 该学生本轮一共填了几个平行意向（补录阶段判断"能不能就地自动确认"用） */
+    @Select("""
+            SELECT COUNT(*) FROM application_item ai
+              JOIN application a ON a.id = ai.application_id
+             WHERE a.student_id = #{studentId} AND a.round_no = #{round}
+            """)
+    int countItems(@Param("studentId") Long studentId, @Param("round") Integer round);
+
     @Insert("""
             INSERT INTO application (student_id, round_no, adjust_in_lab, adjust_cross, status, submitted_at)
             VALUES (#{studentId}, #{roundNo}, #{adjustInLab}, #{adjustCross}, #{status}, #{submittedAt})

@@ -85,6 +85,21 @@ public interface OfferMapper {
             """)
     Offer findConfirmed(@Param("studentId") Long studentId, @Param("round") Integer round);
 
+    /**
+     * 该学生"截至某一轮（含）"是否已经确认过某个去向。
+     * 录取是终局状态：前一轮确认了，后面几轮就不能再填报、也不能再被下发意向。
+     */
+    @Select("""
+            SELECT o.*, l.code AS lab_code, l.name AS lab_name, m.name AS mentor_name
+              FROM offer o
+              JOIN lab l    ON l.id = o.lab_id
+              JOIN mentor m ON m.id = o.mentor_id
+             WHERE o.student_id = #{studentId} AND o.round_no <= #{round} AND o.status = 'CONFIRMED'
+             ORDER BY o.round_no
+             LIMIT 1
+            """)
+    Offer findConfirmedUpTo(@Param("studentId") Long studentId, @Param("round") Integer round);
+
     // ---------------- 导师提交名单时用 ----------------
 
     @Delete("DELETE FROM offer WHERE mentor_id = #{mentorId} AND round_no = #{round}")

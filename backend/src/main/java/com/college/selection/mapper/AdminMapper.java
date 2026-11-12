@@ -172,6 +172,9 @@ public interface AdminMapper {
 
     // ---------------- 补录轮次 ----------------
 
+    @Select("SELECT round_no AS roundNo, status FROM selection_round ORDER BY round_no")
+    java.util.List<java.util.Map<String, Object>> listRounds();
+
     @Select("SELECT status FROM selection_round WHERE round_no = #{round}")
     String roundStatus(@Param("round") Integer round);
 
