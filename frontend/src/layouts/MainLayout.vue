@@ -10,7 +10,7 @@
             <el-badge :is-dot="unread > 0" class="bell">
               <el-button size="small" text style="color:#fff" @click="showNotif = true">通知</el-button>
             </el-badge>
-            <span class="uname">{{ store.user.name }}（{{ roleName }}）</span>
+            <span class="uname">{{ userLabel }}</span>
             <el-button size="small" @click="onLogout">退出</el-button>
           </template>
           <router-link v-else :to="isAdminArea ? '/admin/login' : '/login'">
@@ -46,6 +46,12 @@ const route = useRoute()
 const showNotif = ref(false)
 const unread = computed(() => store.notifications.filter(n => !n.read).length)
 const roleName = computed(() => ({ student: '学生', teacher: '导师', admin: '学院管理员' }[store.user?.role] || ''))
+// 管理员账号的姓名本身就是"学院管理员"，再拼一次会变成"学院管理员（学院管理员）"
+const userLabel = computed(() => {
+  const n = store.user?.name || ''
+  const r = roleName.value
+  return n && n !== r ? `${n}（${r}）` : (n || r)
+})
 const isAdminArea = computed(() => route.path.startsWith('/admin'))
 
 const publicMenus = [

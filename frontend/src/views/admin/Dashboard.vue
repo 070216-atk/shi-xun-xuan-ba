@@ -27,12 +27,12 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { store, loadAdmin } from '../../store'
+import { store, students, loadAdmin } from '../../store'
 
 const d = computed(() => store.dashboard || {})
 
 const stats = computed(() => [
-  { label: '学生总数', value: store.students.length, color: '#1e3a8a' },
+  { label: '学生总数', value: students.length, color: '#1e3a8a' },
   { label: '已填报（本轮）', value: d.value.applied ?? 0, color: '#1b6e5a' },
   { label: '面试已评价', value: d.value.interviewed ?? 0, color: '#1e3a8a' },
   { label: '拟录取待确认', value: d.value.issued ?? 0, color: '#ea6a1f' },
