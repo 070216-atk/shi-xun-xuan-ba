@@ -261,22 +261,37 @@ public class AdminService {
         }
 
         List<Long> sids = adminMapper.studentsWithIssuedAdmitted(round);
-        int auto = 0, multi = 0;
+        int auto = 0, multi = 0, skipped = 0;
         for (Long sid : sids) {
             int cnt = offerMapper.countAdmittedIssued(sid, round);
             if (cnt == 1) {
-                offerMapper.autoConfirmByStudent(sid, round);
-                auto++;
+                // 只有一个意向也要先看名额：名额可能被改小过，不能盲目确认
+                List<Offer> issued = offerMapper.findIssuedAdmitted(sid, round);
+                Offer pick = issued.isEmpty() ? null : issued.get(0);
+                boolean roomLeft = false;
+                if (pick != null) {
+                    Integer quota = offerMapper.lockMentorQuota(pick.mentorId);
+                    int used = offerMapper.countConfirmed(pick.mentorId, round);
+                    roomLeft = quota != null && used < quota;
+                }
+                if (roomLeft) {
+                    offerMapper.autoConfirmByStudent(sid, round);
+                    auto++;
+                } else {
+                    skipped++;   // 名额已满，先不确认，留给收口重新分配
+                }
             } else if (cnt >= 2) {
                 multi++;
             }
         }
-        String remark = String.format("结算第 %d 轮：自动确认 %d 人，多意向待学生选择 %d 人", round, auto, multi);
+        String remark = String.format("结算第 %d 轮：自动确认 %d 人，多意向待学生选择 %d 人，因名额已满暂缓 %d 人",
+                round, auto, multi, skipped);
         logMapper.insert(null, "SYSTEM", "SETTLE_OFFERS", "ROUND", round.longValue(), remark);
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("autoConfirmed", auto);
         m.put("multiChoice", multi);
+        m.put("skippedQuotaFull", skipped);
         return m;
     }
 
@@ -680,14 +695,19 @@ public class AdminService {
                 for (Offer o : issued) {
                     if (left.getOrDefault(o.mentorId, 0) > 0) { pick = o; break; }
                 }
-                if (pick == null) pick = issued.get(0);
-
-                offerMapper.updateStatus(pick.id, "CONFIRMED", now);
-                offerMapper.expireAllOther(sid, round, pick.id);
-                left.put(pick.mentorId, Math.max(0, left.getOrDefault(pick.mentorId, 0) - 1));
-                confirmed.add(sid);
-                if (issued.size() == 1) settledSingle++; else settledMulti++;
-                continue;
+                if (pick != null) {
+                    offerMapper.updateStatus(pick.id, "CONFIRMED", now);
+                    offerMapper.expireAllOther(sid, round, pick.id);
+                    left.put(pick.mentorId, Math.max(0, left.getOrDefault(pick.mentorId, 0) - 1));
+                    confirmed.add(sid);
+                    if (issued.size() == 1) settledSingle++; else settledMulti++;
+                    continue;
+                }
+                // 他所有意向的导师都满了：这些意向作废，下面按调剂意愿重新分配，
+                // 绝对不能硬确认（否则就超录了）
+                for (Offer o : issued) {
+                    offerMapper.updateStatus(o.id, "EXPIRED", null);
+                }
             }
 
             boolean[] w = wishes.getOrDefault(sid, new boolean[]{false, false});
