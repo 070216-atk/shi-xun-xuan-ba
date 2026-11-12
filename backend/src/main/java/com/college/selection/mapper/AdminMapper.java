@@ -262,6 +262,19 @@ public interface AdminMapper {
             """)
     java.util.List<java.util.Map<String, Object>> duplicateConfirmed(@Param("round") Integer round);
 
+    /** 当前最后一个活动轮次（OPEN 或 CLOSED 的最大轮次），用来判断是不是最终公示 */
+    @Select("""
+            SELECT COALESCE(MAX(round_no), 1) FROM selection_round
+             WHERE status IN ('OPEN', 'CLOSED')
+            """)
+    int lastActiveRound();
+
+    /** 从某一轮起（含该轮）已经确认去向的学生：跨轮判断最终有没有着落 */
+    @Select("""
+            SELECT DISTINCT student_id FROM offer
+             WHERE round_no >= #{round} AND status = 'CONFIRMED'
+            """)
+    java.util.List<Long> confirmedFromRoundOn(@Param("round") Integer round);
     // ---------------- 学生名单 ----------------
 
     @Select("""

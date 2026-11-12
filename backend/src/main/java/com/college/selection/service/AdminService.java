@@ -602,7 +602,8 @@ public class AdminService {
     /** 收口前的缺口清单：谁还没着落、还有多少空位、够不够 */
     public Map<String, Object> placementGaps(Integer round) {
         List<Long> applied = adminMapper.appliedStudentIds(round);
-        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedStudentIds(round));
+        // 跨轮判定：后面某一轮已经被录取的人，本轮不再算未安置
+        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedFromRoundOn(round));
         Map<Long, Integer> left = capacityLeft(round);
         Map<Long, Map<String, Object>> info = studentInfo();
 
@@ -642,6 +643,9 @@ public class AdminService {
         m.put("unplacedCount", unplaced.size());
         m.put("totalRemaining", totalLeft);
         m.put("feasible", totalLeft >= unplaced.size());
+        int lastRound = adminMapper.lastActiveRound();
+        m.put("lastRound", lastRound);
+        m.put("finalRound", round >= lastRound);
         m.put("availableMentors", available);
         m.put("unplaced", unplaced);
         return m;
@@ -681,7 +685,8 @@ public class AdminService {
         }
 
         List<Long> applied = adminMapper.appliedStudentIds(round);
-        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedStudentIds(round));
+        // 后面轮次已经录取的人不算本轮缺口，避免重复安置
+        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedFromRoundOn(round));
 
         int settledSingle = 0, settledMulti = 0, inLab = 0, cross = 0, forced = 0;
         List<Long> stillUnplaced = new ArrayList<>();
@@ -774,7 +779,8 @@ public class AdminService {
     /** 收口校验：每个已填报学生必须恰好有一个确认去向，且不能超过导师名额 */
     public Map<String, Object> placementVerify(Integer round) {
         List<Long> applied = adminMapper.appliedStudentIds(round);
-        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedStudentIds(round));
+        // 跨轮：只要在本轮或之后某一轮被录取，就算最终有着落
+        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedFromRoundOn(round));
         Map<Long, Map<String, Object>> info = studentInfo();
 
         List<Map<String, Object>> missing = new ArrayList<>();
@@ -816,11 +822,16 @@ public class AdminService {
             }
         }
 
-        boolean ok = missing.isEmpty() && multi.isEmpty() && over.isEmpty();
+        int lastRound = adminMapper.lastActiveRound();
+        boolean finalRound = round >= lastRound;
+        // 非最终轮次：允许还有人在等后续补录，只要没有重复和超录就算通过
+        boolean ok = multi.isEmpty() && over.isEmpty() && (finalRound ? missing.isEmpty() : true);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("ok", ok);
+        m.put("finalRound", finalRound);
+        m.put("lastRound", lastRound);
         m.put("appliedCount", applied.size());
-        m.put("confirmedCount", confirmed.size());
+        m.put("confirmedCount", applied.size() - missing.size());
         m.put("missing", missing);
         m.put("duplicate", multi);
         m.put("overQuota", over);
