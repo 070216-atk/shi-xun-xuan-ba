@@ -1,9 +1,13 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { store } from '../store'
+import { store, ensureSession } from '../store'
 
 const routes = [
+  // ---- 前台：统一登录（学生 / 导师）----
   { path: '/login', component: () => import('../views/Login.vue') },
+  // ---- 管理后台：独立入口，独立登录页 ----
+  { path: '/admin/login', component: () => import('../views/admin/AdminLogin.vue') },
+
   {
     path: '/',
     component: () => import('../layouts/MainLayout.vue'),
@@ -21,18 +25,29 @@ const routes = [
       { path: 'admin/quotas', component: () => import('../views/admin/Quotas.vue'), meta: { role: 'admin' } },
       { path: 'admin/adjust', component: () => import('../views/admin/Adjust.vue'), meta: { role: 'admin' } },
       { path: 'admin/publicity', component: () => import('../views/admin/Publicity.vue'), meta: { role: 'admin' } },
-      { path: 'admin/dashboard', component: () => import('../views/admin/Dashboard.vue'), meta: { role: 'admin' } }
+      { path: 'admin/dashboard', component: () => import('../views/admin/Dashboard.vue'), meta: { role: 'admin' } },
+      { path: 'admin/notices', component: () => import('../views/admin/Notices.vue'), meta: { role: 'admin' } },
+      { path: 'admin/logs', component: () => import('../views/admin/Logs.vue'), meta: { role: 'admin' } }
     ]
-  }
+  },
+
+  { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
 
 const router = createRouter({ history: createWebHashHistory(), routes })
 
-router.beforeEach(to => {
+router.beforeEach(async (to) => {
   if (!to.meta.role) return true
-  if (!store.user) return '/login'
+
+  // 整页刷新时先等登录态恢复完，再判断权限（否则会被误判成未登录）
+  await ensureSession()
+
+  // 没登录：管理员路由回管理后台登录页，其余回统一登录页
+  if (!store.user) {
+    return to.meta.role === 'admin' ? '/admin/login' : '/login'
+  }
   if (store.user.role !== to.meta.role) {
-    ElMessage.warning('当前角色无权访问该页面')
+    ElMessage.warning('当前账号无权访问该页面')
     return '/'
   }
   return true

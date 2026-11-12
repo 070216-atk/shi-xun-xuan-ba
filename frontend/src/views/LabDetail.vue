@@ -4,7 +4,7 @@
     <div class="card">
       <el-descriptions :column="isMobile ? 1 : 2" border>
         <el-descriptions-item label="项目方向">{{ lab.direction }}</el-descriptions-item>
-        <el-descriptions-item label="招录名额">{{ lab.quota }} 人（已报名 {{ appliedCount(lab.id, store.round) }} 人）</el-descriptions-item>
+        <el-descriptions-item label="招录名额">{{ lab.quota }} 人（已报名 {{ appliedCount(lab.id) }} 人）</el-descriptions-item>
         <el-descriptions-item label="地点">{{ lab.location }}</el-descriptions-item>
         <el-descriptions-item label="联系方式">{{ lab.contact }}</el-descriptions-item>
         <el-descriptions-item label="开放日时间" :span="2">{{ lab.openDay }}</el-descriptions-item>
@@ -13,9 +13,11 @@
       </el-descriptions>
     </div>
     <div class="card">
-      <div class="page-title">导师介绍</div>
-      <div v-for="m in lab.mentors" :key="m.name" style="margin-bottom:12px">
-        <b>{{ m.name }}</b> <el-tag size="small" type="info">{{ m.title }}</el-tag>
+      <div class="page-title">导师与名额</div>
+      <div v-for="m in lab.mentors" :key="m.id" style="margin-bottom:12px">
+        <b>{{ m.name }}</b>
+        <el-tag size="small" type="info" style="margin-left:6px">{{ m.title }}</el-tag>
+        <el-tag size="small" type="warning" style="margin-left:4px">名额 {{ m.quota }}</el-tag>
         <p class="muted" style="margin:6px 0">{{ m.intro }}</p>
       </div>
     </div>
@@ -24,14 +26,26 @@
       <el-button v-if="store.user?.role === 'student'" type="primary" @click="$router.push('/apply')">去填报意向</el-button>
     </div>
   </div>
-  <el-empty v-else description="实训室不存在" />
+  <el-empty v-else description="正在加载 / 实训室不存在" />
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { labById, appliedCount, store } from '../store'
+import { ElMessage } from 'element-plus'
+import { labById, loadLab, appliedCount, store } from '../store'
+
 const route = useRoute()
 const lab = computed(() => labById(route.params.id))
 const isMobile = computed(() => window.innerWidth < 600)
+
+onMounted(async () => {
+  if (!lab.value) {
+    try {
+      await loadLab(route.params.id)
+    } catch (e) {
+      ElMessage.error(e.message)
+    }
+  }
+})
 </script>

@@ -2,46 +2,69 @@
   <div>
     <div class="page-title">流程配置</div>
     <el-alert type="info" :closable="false" style="margin-bottom:16px"
-      title="预览版说明：阶段切换为手动模拟（正式版由服务器时间窗口自动开关）。切换后对应操作入口自动开放/关闭，演示截止时间重置为 4 小时后。" />
+      title="时间窗以服务器时间为准。「切换到该阶段」会把该阶段设成现在开始、4 小时后结束，用于演示。" />
+    <el-alert v-if="!roundOpen" type="warning" :closable="false" style="margin-bottom:16px"
+      :title="`第 ${store.round} 轮已结束，只能查看；要调阶段请先在右上角切到进行中的轮次。`" />
     <div class="card">
       <el-table :data="stages" size="small">
         <el-table-column prop="id" label="#" width="50" />
         <el-table-column prop="name" label="阶段" width="180" />
-        <el-table-column prop="window" label="时间窗口" width="220" />
-        <el-table-column prop="desc" label="说明" min-width="260" />
-        <el-table-column label="状态" width="200" fixed="right">
+        <el-table-column prop="window" label="时间窗口" min-width="240" />
+        <el-table-column label="状态" width="150">
           <template #default="{ row }">
-            <el-tag v-if="row.id === store.currentStage" type="success">当前阶段</el-tag>
-            <el-button v-else size="small" type="primary" plain @click="switchTo(row)">切换到该阶段</el-button>
+            <el-tag v-if="row.current" type="success">当前阶段</el-tag>
+            <el-tag v-else-if="row.open" type="warning">开放中</el-tag>
+            <el-tag v-else type="info">未开放</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="150" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="!row.open" size="small" type="primary" plain :disabled="!roundOpen"
+              @click="switchTo(row)">切换到该阶段</el-button>
+            <span v-else class="muted">进行中</span>
           </template>
         </el-table-column>
       </el-table>
     </div>
     <div class="card">
       <div class="page-title">演示控制</div>
-      <p class="muted">当前第 {{ store.round }} 轮。切换到「分轮补录」会自动进入下一轮（最多第三轮）。</p>
-      <el-popconfirm title="将清空所有演示数据并恢复初始状态，确定？" @confirm="onReset">
-        <template #reference><el-button type="danger" plain>重置演示数据</el-button></template>
-      </el-popconfirm>
+      <p class="muted">当前第 {{ store.round }} 轮。切换阶段会改动数据库里的时间窗，切换后刷新页面即可看到效果。</p>
+      <el-button @click="refresh">刷新状态</el-button>
     </div>
   </div>
 </template>
 
 <script setup>
+import { computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { stages } from '../../mock/data'
-import { store, setStage, resetDemo } from '../../store'
+import { stages, store, loadPublic, switchStage } from '../../store'
+
+const roundOpen = computed(() => store.rounds.find(r => r.roundNo === store.round)?.status === 'OPEN')
 
 async function switchTo(row) {
   try {
-    await ElMessageBox.confirm(`确认将当前阶段切换为「${row.name}」？学生端与管理端的可操作入口将随之变化。`, '切换阶段', { type: 'warning', confirmButtonText: '切换', cancelButtonText: '取消' })
+    await ElMessageBox.confirm(
+      `确认把「${row.name}」设为现在开始、4 小时后结束？`,
+      '切换阶段', { type: 'warning', confirmButtonText: '切换', cancelButtonText: '取消' }
+    )
   } catch { return }
-  setStage(row.id)
-  store.notifications.unshift({ time: '刚刚', text: `阶段已切换：${row.name}`, read: false })
-  ElMessage.success(`已切换到「${row.name}」`)
+  try {
+    const r = await switchStage(row.id)
+    store.notifications.unshift({ time: '刚刚', text: `阶段已切换：${row.name}`, read: false })
+    if (r && r.autoConfirmed != null) {
+      ElMessage.success(
+        `已切到「${row.name}」：自动确认 ${r.autoConfirmed} 人，${r.multiChoice} 人需自主选择去向`
+      )
+    } else {
+      ElMessage.success(`已切换到「${row.name}」`)
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '切换失败')
+  }
 }
-function onReset() {
-  resetDemo()
-  ElMessage.success('演示数据已重置')
+
+function refresh() {
+  loadPublic().then(() => ElMessage.success('已刷新')).catch(e => ElMessage.error(e.message))
 }
+onMounted(() => loadPublic().catch(e => ElMessage.error(e.message)))
 </script>

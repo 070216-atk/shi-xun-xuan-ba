@@ -3,22 +3,32 @@
     <div class="card hero">
       <h1>学生实训室进组选拔</h1>
       <p>双向选择 · 分轮录取 · 统筹调剂</p>
-      <el-tag type="warning" size="large">当前阶段：{{ currentStage.name }}（{{ currentStage.window }}）</el-tag>
+      <el-tag v-if="currentStage" type="warning" size="large">
+        当前阶段：{{ currentStage.name }}（{{ currentStage.window }}）
+      </el-tag>
+      <el-tag v-else type="info" size="large">当前不在任何阶段的开放时间内</el-tag>
     </div>
 
     <div class="card">
       <div class="page-title">选拔流程</div>
-      <el-steps :active="store.currentStage - 1" direction="vertical" style="min-height:520px">
+      <el-steps :active="Math.max(0, store.currentStage - 1)" direction="vertical" style="min-height:520px">
         <el-step v-for="s in stages" :key="s.id" :title="`${s.id}. ${s.name}`" :description="`${s.window} ｜ ${s.desc}`" />
       </el-steps>
     </div>
 
     <div class="card">
       <div class="page-title">通知公告</div>
-      <div v-for="n in notices" :key="n.title" class="notice">
-        <div class="notice-head"><b>{{ n.title }}</b><span class="muted">{{ n.date }}</span></div>
+      <div v-for="n in notices" :key="n.id" class="notice">
+        <div class="notice-head">
+          <b>
+            <el-tag v-if="n.isTop" type="danger" size="small" style="margin-right:6px">置顶</el-tag>
+            {{ n.title }}
+          </b>
+          <span class="muted">{{ n.date }}</span>
+        </div>
         <p class="muted">{{ n.content }}</p>
       </div>
+      <el-empty v-if="!notices.length" description="暂无公告" :image-size="60" />
     </div>
 
     <div class="card" style="text-align:center">
@@ -28,10 +38,14 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { stages, notices } from '../mock/data'
-import { store } from '../store'
+import { computed, onMounted } from 'vue'
+import { stages, notices, store, loadNotices } from '../store'
+
 const currentStage = computed(() => stages.find(s => s.id === store.currentStage))
+
+onMounted(() => {
+  loadNotices().catch(() => {})
+})
 </script>
 
 <style scoped>
