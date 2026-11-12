@@ -37,6 +37,9 @@
             {{ pendingAdmitted.length > 1 ? '选择该去向' : '确认该去向' }}
           </el-button>
         </div>
+        <div v-else-if="o.status === 'confirmed' && o.type === 'ADMITTED'">
+          <el-button size="small" type="warning" plain :loading="releasing" @click="doRelease(o)">撤销确认</el-button>
+        </div>
       </div>
     </div>
 
@@ -61,7 +64,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { stages, store, labById, studentStatus, loadStudent, confirmOffer } from '../../store'
+import { stages, store, labById, studentStatus, loadStudent, confirmOffer, releaseOffer } from '../../store'
 
 onMounted(() => {
   if (store.user?.role === 'student') loadStudent().catch(e => ElMessage.error(e.message))
@@ -118,10 +121,29 @@ function offerTag(s) {
 }
 
 const confirming = ref(false)
+const releasing = ref(false)
+
+async function doRelease(o) {
+  try {
+    await ElMessageBox.confirm(
+      `撤销对「${o.labName || labName(o.labId)}」的确认？该名额会立刻让给这位导师的递补第一名，你可以在本阶段重新选择。`,
+      '撤销确认', { confirmButtonText: '撤销', cancelButtonText: '再想想', type: 'warning' }
+    )
+  } catch { return }
+  releasing.value = true
+  try {
+    const r = await releaseOffer(o.offerId)
+    ElMessage.success(r.promotedStudentId ? '已撤销，名额已让给递补同学' : '已撤销确认')
+  } catch (e) {
+    ElMessage.error(e.message || '撤销失败')
+  } finally {
+    releasing.value = false
+  }
+}
 async function doConfirm(o) {
   try {
     await ElMessageBox.confirm(
-      `确认选择「${o.labName || labName(o.labId)}」为唯一去向？其余意向将视为放弃，此操作不可撤销。`,
+      `确认选择「${o.labName || labName(o.labId)}」为去向？确认后仍可「撤销确认」改选，但名额会立刻让给该导师的递补第一名。`,
       '确认去向', { confirmButtonText: '确认', cancelButtonText: '再想想', type: 'warning' }
     )
   } catch { return }

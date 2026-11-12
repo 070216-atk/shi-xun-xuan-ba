@@ -39,6 +39,8 @@ export const saveMyApplication = (body) => http.put('/student/application', body
 export const getMyStatus = (round = 1) => http.get(`/student/status?round=${round}`)
 export const getMyOffers = (round = 1) => http.get(`/student/offers?round=${round}`)
 export const confirmOffer = (offerId) => http.post(`/student/offers/${offerId}/confirm`)
+/** 撤销确认（选课式：退回待确认，名额让给该导师递补第一名） */
+export const releaseOffer = (offerId) => http.post(`/student/offers/${offerId}/release`)
 export const getMyResult = (round = 1) => http.get(`/student/result?round=${round}`)
 
 // ---------------- 导师端 ----------------

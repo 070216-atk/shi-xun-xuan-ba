@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,14 +83,67 @@ public class OfferService {
             throw new BizException(ErrorCode.QUOTA_FULL, "该导师名额已满");
         }
 
+        // 选课式：确认新去向时，把自己此前确认的那条"释放"回待确认。
+        // 不判放弃，因为学生随时可能改回来；被释放的名额立刻让对应导师的递补第一名上位。
+        List<Offer> previous = offerMapper.findOtherConfirmed(studentId, offer.roundNo, offer.id);
         offerMapper.updateStatus(offer.id, "CONFIRMED", now);
-        int released = offerMapper.declineOthers(studentId, offer.roundNo, offer.id);
+        int released = offerMapper.releaseOthers(studentId, offer.roundNo, offer.id);
+
+        List<Long> promoted = new ArrayList<>();
+        for (Offer old : previous) {
+            Offer p = promoteNextWaitlist(old.mentorId, offer.roundNo);
+            if (p != null) {
+                promoted.add(p.studentId);
+            }
+        }
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("confirmedOfferId", offer.id);
         data.put("mentorId", offer.mentorId);
         data.put("releasedCount", released);
+        data.put("promotedStudentIds", promoted);
         return data;
+    }
+
+    /**
+     * 撤销确认（选课式的"退选"）。
+     * 只把这一条退回"待确认"，同时把名额让给该导师的递补第一名。
+     */
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public Map<String, Object> release(Long studentId, Long offerId) {
+        Offer offer = offerMapper.lockById(offerId);
+        if (offer == null) {
+            throw new BizException(4041, "录取意向不存在");
+        }
+        if (!offer.studentId.equals(studentId)) {
+            throw new BizException(ErrorCode.NO_PERMISSION, "只能撤销自己的录取意向");
+        }
+        if (!"CONFIRMED".equals(offer.status)) {
+            throw new BizException(2006, "该意向当前不是「已确认」状态，无需撤销");
+        }
+        stageService.assertAnyOpen(offer.roundNo, STAGE_CONFIRM, STAGE_REFILL);
+
+        offerMapper.releaseConfirmed(offer.id);
+        Offer promoted = promoteNextWaitlist(offer.mentorId, offer.roundNo);
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("releasedOfferId", offer.id);
+        data.put("mentorId", offer.mentorId);
+        data.put("promotedStudentId", promoted == null ? null : promoted.studentId);
+        return data;
+    }
+
+    /** 把某导师递补第一名提升为拟录取（名额空出来时调用） */
+    private Offer promoteNextWaitlist(Long mentorId, Integer round) {
+        List<Offer> wl = offerMapper.findWaitlist(mentorId, round);
+        if (wl.isEmpty()) {
+            return null;
+        }
+        Offer next = wl.get(0);
+        offerMapper.promoteToAdmitted(next.id,
+                offerMapper.maxAdmittedRank(mentorId, round) + 1,
+                stageService.getEndAt(round, STAGE_CONFIRM));
+        return next;
     }
 
     /** 最终去向（用于 /student/result） */

@@ -518,7 +518,9 @@ public class TeacherService {
         }
         Long promotedStudentId = null;
         if (next != null) {
-            offerMapper.promoteToAdmitted(next.id, stageService.getEndAt(round, STAGE_CONFIRM));
+            offerMapper.promoteToAdmitted(next.id,
+                    offerMapper.maxAdmittedRank(t.mentorId, round) + 1,
+                    stageService.getEndAt(round, STAGE_CONFIRM));
             promotedStudentId = next.studentId;
         }
 

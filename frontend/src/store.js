@@ -291,6 +291,13 @@ export async function submitApplication(items, adjustInLab, adjustCross) {
   await Promise.all([loadStudent(), loadPublic()])
 }
 
+/** 撤销确认：退回待确认，名额让给该导师递补第一名 */
+export async function releaseOffer(offerId) {
+  const r = await api.releaseOffer(offerId)
+  await loadStudent()
+  return r
+}
+
 export async function confirmOffer(offerId) {
   const r = await api.confirmOffer(offerId)
   await loadStudent()

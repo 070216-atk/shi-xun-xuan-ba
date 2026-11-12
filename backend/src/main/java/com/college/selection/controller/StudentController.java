@@ -65,12 +65,20 @@ public class StudentController {
         return Result.ok(offerService.list(userId, round));
     }
 
-    /** 确认唯一去向；其余意向自动置为放弃 */
+    /** 确认去向（暂时确认，可撤销；确认新的会自动释放旧的） */
     @PostMapping("/offers/{offerId}/confirm")
     public Result<Map<String, Object>> confirm(
             @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
             @PathVariable Long offerId) {
         return Result.ok(offerService.confirm(userId, offerId));
+    }
+
+    /** 撤销确认：意向退回"待确认"，名额让给该导师的递补第一名 */
+    @PostMapping("/offers/{offerId}/release")
+    public Result<Map<String, Object>> release(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @PathVariable Long offerId) {
+        return Result.ok(offerService.release(userId, offerId));
     }
 
     /** 最终去向 */

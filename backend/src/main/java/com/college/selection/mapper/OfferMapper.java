@@ -153,6 +153,43 @@ public interface OfferMapper {
             """)
     int maxAdmittedRank(@Param("mentorId") Long mentorId, @Param("round") Integer round);
 
+    /** 选课式：确认新的去向时，把自己之前确认的那条"释放"回待确认（不判放弃，还能反悔） */
+    @Update("""
+            UPDATE offer
+               SET status = 'ISSUED', confirmed_at = NULL
+             WHERE student_id = #{studentId} AND round_no = #{round}
+               AND status = 'CONFIRMED' AND id <> #{keepId}
+            """)
+    int releaseOthers(@Param("studentId") Long studentId,
+                      @Param("round") Integer round,
+                      @Param("keepId") Long keepId);
+
+    /** 查我本轮已确认但当前又被释放的那几条（用来给对应导师递补） */
+    @Select("""
+            SELECT * FROM offer
+             WHERE student_id = #{studentId} AND round_no = #{round}
+               AND status = 'CONFIRMED' AND id <> #{keepId}
+            """)
+    List<Offer> findOtherConfirmed(@Param("studentId") Long studentId,
+                                   @Param("round") Integer round,
+                                   @Param("keepId") Long keepId);
+
+    /** 某导师的递补队列（按顺位） */
+    @Select("""
+            SELECT * FROM offer
+             WHERE mentor_id = #{mentorId} AND round_no = #{round}
+               AND type = 'WAITLIST' AND status = 'ISSUED'
+             ORDER BY COALESCE(rank_no, 9999), id
+            """)
+    List<Offer> findWaitlist(@Param("mentorId") Long mentorId, @Param("round") Integer round);
+
+    /** 撤销已确认的录取（学生反悔） */
+    @Update("""
+            UPDATE offer SET status = 'ISSUED', confirmed_at = NULL
+             WHERE id = #{id} AND status = 'CONFIRMED'
+            """)
+    int releaseConfirmed(@Param("id") Long id);
+
     /** 该学生本轮还有几条"已下发但未确认"的拟录取 */
     @Select("""
             SELECT COUNT(*) FROM offer
@@ -178,10 +215,10 @@ public interface OfferMapper {
     /** 撤销录取后，把递补第一名提升为拟录取 */
     @Update("""
             UPDATE offer
-               SET type = 'ADMITTED', rank_no = NULL, confirm_deadline = #{deadline}
+               SET type = 'ADMITTED', rank_no = #{rank}, confirm_deadline = #{deadline}
              WHERE id = #{id} AND status = 'ISSUED'
             """)
-    int promoteToAdmitted(@Param("id") Long id, @Param("deadline") LocalDateTime deadline);
+    int promoteToAdmitted(@Param("id") Long id, @Param("rank") Integer rank, @Param("deadline") LocalDateTime deadline);
 
     /** 结算时刷新 deadline 用 */
     @Update("""
