@@ -28,6 +28,7 @@ export const store = reactive({
   quotas: [],         // 管理端：/admin/quotas 的原样数据
   applicants: [],     // 导师端：本室报名学生（后端原样）
   interviewList: [],  // 导师端：本室面试名单（入围者的并集）
+  adjustInbox: [],    // 导师端：别人指定调剂给我的学生
   pool: { vacancies: [], candidates: [] },
   results: [],        // 管理端：已确认的最终名单
   publicityList: [],  // 公示名单（公开接口）
@@ -312,14 +313,17 @@ export function studentStatus(studentId) {
 // ---------------- 导师端 ----------------
 
 export async function loadTeacher() {
-  const [list, lists, interviewList] = await Promise.all([
+  const [list, lists, interviewList, inbox] = await Promise.all([
     api.getApplicants(store.round),
     api.getTeacherLists(store.round),
-    api.getInterviewList(store.round).catch(() => [])
+    api.getInterviewList(store.round).catch(() => []),
+    api.getAdjustInbox(store.round).catch(() => [])
   ])
   store.applicants = list
   // 面试名单（入围者的并集）：评分页和名单页只认这批人
   store.interviewList = interviewList || []
+  // 别人指定调剂给我的学生：需要我接收或拒绝
+  store.adjustInbox = inbox || []
   indexStudents(
     list.map((a) => ({
       studentId: a.studentId,
@@ -376,15 +380,36 @@ export async function saveScore(studentCode, body) {
   await loadTeacher()
 }
 
-export async function submitLists({ admit, waitlist, adjust }) {
+export async function submitLists({ admit, waitlist, adjust, adjustTargets }) {
   const map = (arr) => arr.map((c) => codeToId[c])
+  const targets = adjustTargets || {}
   await api.saveTeacherLists({
     round: store.round,
     admitted: map(admit),
     waitlist: map(waitlist),
-    adjustCandidates: map(adjust)
+    // 内部调剂带上目标导师（新流程：由导师指定调给谁）
+    adjustList: (adjust || []).map((c) => ({
+      studentId: codeToId[c],
+      targetMentorId: targets[c] || null
+    }))
   })
   await loadTeacher()
+}
+
+// ---------------- 内部调剂（我作为接收方） ----------------
+
+/** 接收调剂：直接变成我的拟录取 */
+export async function acceptAdjust(offerId) {
+  const r = await api.acceptAdjust(offerId, store.round)
+  await loadTeacher()
+  return r
+}
+
+/** 拒绝调剂：退回发起人 */
+export async function rejectAdjust(offerId, reason) {
+  const r = await api.rejectAdjust(offerId, { reason }, store.round)
+  await loadTeacher()
+  return r
 }
 
 // ---------------- 管理端 ----------------

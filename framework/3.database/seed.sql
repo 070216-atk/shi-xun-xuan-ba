@@ -125,6 +125,10 @@ INSERT INTO sys_user (username, password_hash, role, code, real_name, class_name
 ('teacher03', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'TEACHER', 'T40401',   '高璇',       NULL,
     (SELECT id FROM lab WHERE code = '404'),
     (SELECT id FROM mentor WHERE name = '高璇')),
+-- 202 室的第二位导师账号：用来演示"导师把学生内部调剂给同室另一位导师"
+('teacher04', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'TEACHER', 'T20202',   '佳浩',       NULL,
+    (SELECT id FROM lab WHERE code = '202'),
+    (SELECT id FROM mentor WHERE name = '佳浩')),
 ('student01', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023001', '李明', '计科2301', NULL, NULL),
 ('student02', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023002', '王芳', '计科2301', NULL, NULL),
 ('student03', '$2a$10$REPLACE_WITH_REAL_BCRYPT', 'STUDENT', 'S2023003', '陈晨', '软件2302', NULL, NULL),

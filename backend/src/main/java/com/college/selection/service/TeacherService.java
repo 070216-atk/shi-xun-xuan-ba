@@ -7,6 +7,7 @@ import com.college.selection.dto.ScoreReq;
 import com.college.selection.dto.TeacherListsReq;
 import com.college.selection.dto.TeacherListsVO;
 import com.college.selection.entity.InterviewInvite;
+import com.college.selection.entity.Mentor;
 import com.college.selection.entity.Offer;
 import com.college.selection.entity.SysUser;
 import com.college.selection.mapper.ApplicationMapper;
@@ -44,6 +45,7 @@ public class TeacherService {
     private final StageService stageService;
     private final OperationLogMapper logMapper;
     private final InterviewInviteMapper inviteMapper;
+    private final MentorMapper mentorMapper;
 
     public TeacherService(TeacherMapper teacherMapper,
                           OfferMapper offerMapper,
@@ -51,7 +53,8 @@ public class TeacherService {
                           SysUserMapper userMapper,
                           StageService stageService,
                           OperationLogMapper logMapper,
-                          InterviewInviteMapper inviteMapper) {
+                          InterviewInviteMapper inviteMapper,
+                          MentorMapper mentorMapper) {
         this.teacherMapper = teacherMapper;
         this.offerMapper = offerMapper;
         this.applicationMapper = applicationMapper;
@@ -59,6 +62,7 @@ public class TeacherService {
         this.stageService = stageService;
         this.logMapper = logMapper;
         this.inviteMapper = inviteMapper;
+        this.mentorMapper = mentorMapper;
     }
 
     /** 取出当前登录的导师，校验角色和绑定关系 */
@@ -204,7 +208,22 @@ public class TeacherService {
 
         List<Long> admitted = req.admitted == null ? Collections.emptyList() : req.admitted;
         List<Long> waitlist = req.waitlist == null ? Collections.emptyList() : req.waitlist;
-        List<Long> adjust = req.adjustCandidates == null ? Collections.emptyList() : req.adjustCandidates;
+
+        // 内部调剂：优先用 adjustList（带目标导师），否则退回旧字段（不带目标）
+        List<Long> adjust = new ArrayList<>();
+        List<Long> adjustTarget = new ArrayList<>();
+        if (req.adjustList != null && !req.adjustList.isEmpty()) {
+            for (TeacherListsReq.AdjustItem it : req.adjustList) {
+                if (it == null || it.studentId == null) continue;
+                adjust.add(it.studentId);
+                adjustTarget.add(it.targetMentorId);
+            }
+        } else if (req.adjustCandidates != null) {
+            for (Long sid : req.adjustCandidates) {
+                adjust.add(sid);
+                adjustTarget.add(null);
+            }
+        }
 
         Integer quota = offerMapper.lockMentorQuota(t.mentorId);
         if (quota == null) {
@@ -266,8 +285,26 @@ public class TeacherService {
         for (int i = 0; i < waitlist.size(); i++) {
             inserted.add(insert(t, round, waitlist.get(i), "WAITLIST", i + 1, now, deadline));
         }
+        // 内部调剂必须"调给同室的另一位导师"：校验目标存在、同室、不是自己
         for (int i = 0; i < adjust.size(); i++) {
-            inserted.add(insert(t, round, adjust.get(i), "ADJUST_CANDIDATE", i + 1, now, deadline));
+            Long target = adjustTarget.get(i);
+            if (target == null) continue;
+            if (target.equals(t.mentorId)) {
+                throw new BizException(2007, "内部调剂不能调给自己，请直接放进拟录取");
+            }
+            Mentor tm = mentorMapper.findById(target);
+            if (tm == null) {
+                throw new BizException(2007, "调剂目标导师不存在：" + target);
+            }
+            if (!tm.labId.equals(t.labId)) {
+                throw new BizException(2007, "内部调剂只能调给本实训室的导师，"
+                        + tm.name + " 属于其他实训室");
+            }
+        }
+
+        for (int i = 0; i < adjust.size(); i++) {
+            inserted.add(insert(t, round, adjust.get(i), "ADJUST_CANDIDATE", i + 1, now, deadline,
+                    adjustTarget.get(i)));
         }
 
         // 注意：首轮这里【不做】自动确认。
@@ -355,6 +392,84 @@ public class TeacherService {
         return m;
     }
 
+    // ---------------- 内部调剂（收件方视角） ----------------
+
+    /** 别人指定调剂给我的学生 */
+    public List<Offer> adjustInbox(Long teacherId, Integer round) {
+        SysUser t = requireTeacher(teacherId);
+        return offerMapper.findAdjustInbox(t.mentorId, round);
+    }
+
+    /**
+     * 接收调剂：学生直接变成我的拟录取（占我的名额，不再二次面试）。
+     * 原记录置为 VOID 留痕。
+     */
+    @Transactional
+    public Map<String, Object> acceptAdjust(Long teacherId, Integer round, Long offerId) {
+        SysUser t = requireTeacher(teacherId);
+        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_CONFIRM, STAGE_REFILL);
+
+        Offer o = offerMapper.lockById(offerId);
+        if (o == null) {
+            throw new BizException(4041, "调剂记录不存在");
+        }
+        if (!"ADJUST_CANDIDATE".equals(o.type) || !"ISSUED".equals(o.status)) {
+            throw new BizException(2006, "该调剂记录已处理，不能重复接收");
+        }
+        if (o.targetMentorId == null || !o.targetMentorId.equals(t.mentorId)) {
+            throw new BizException(ErrorCode.NO_PERMISSION, "这条调剂不是指定给你的");
+        }
+
+        Integer quota = offerMapper.lockMentorQuota(t.mentorId);
+        int used = offerMapper.countAdmittedByMentor(t.mentorId, round);
+        if (quota == null || used >= quota) {
+            throw new BizException(ErrorCode.QUOTA_FULL,
+                    String.format("你的名额已满（%d/%d），不能再接收调剂学生", used, quota));
+        }
+
+        o.status = "VOID";
+        o.remark = "已由 " + t.realName + " 接收为拟录取";
+        offerMapper.updateStatus(o.id, "VOID", null);
+
+        Offer created = insert(t, round, o.studentId, "ADMITTED",
+                offerMapper.maxAdmittedRank(t.mentorId, round) + 1,
+                LocalDateTime.now(), stageService.getEndAt(round, STAGE_CONFIRM), null);
+
+        logMapper.insertWithState(teacherId, "TEACHER", "ADJUST_ACCEPT", "OFFER", o.id,
+                "ADJUST_CANDIDATE", "ADMITTED", "接收调剂学生 " + who(o.studentId) + " 为拟录取");
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("studentId", o.studentId);
+        m.put("newOfferId", created.id);
+        return m;
+    }
+
+    /** 拒绝调剂：退回发起人（学生回到调剂池） */
+    @Transactional
+    public Map<String, Object> rejectAdjust(Long teacherId, Integer round, Long offerId, String reason) {
+        SysUser t = requireTeacher(teacherId);
+
+        Offer o = offerMapper.lockById(offerId);
+        if (o == null) {
+            throw new BizException(4041, "调剂记录不存在");
+        }
+        if (o.targetMentorId == null || !o.targetMentorId.equals(t.mentorId)) {
+            throw new BizException(ErrorCode.NO_PERMISSION, "这条调剂不是指定给你的");
+        }
+        if (!"ISSUED".equals(o.status)) {
+            throw new BizException(2006, "该调剂记录已处理");
+        }
+
+        offerMapper.updateStatus(o.id, "DECLINED", null);
+        logMapper.insertWithState(teacherId, "TEACHER", "ADJUST_REJECT", "OFFER", o.id,
+                "ADJUST_CANDIDATE", "DECLINED",
+                "拒绝调剂学生 " + who(o.studentId) + (reason == null || reason.isBlank() ? "" : "，原因：" + reason));
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("studentId", o.studentId);
+        return m;
+    }
+
     /** 把数字 id 换成人看得懂的名字，别在报错里甩 ID */
     private String who(Long studentId) {
         SysUser u = userMapper.findById(studentId);
@@ -415,10 +530,17 @@ public class TeacherService {
     }
 
     private Offer insert(SysUser t, Integer round, Long studentId, String type, Integer rank,
-                         LocalDateTime now, LocalDateTime deadline) {        Offer o = new Offer();
+                         LocalDateTime now, LocalDateTime deadline) {
+        return insert(t, round, studentId, type, rank, now, deadline, null);
+    }
+
+    private Offer insert(SysUser t, Integer round, Long studentId, String type, Integer rank,
+                         LocalDateTime now, LocalDateTime deadline, Long targetMentorId) {
+        Offer o = new Offer();
         o.studentId = studentId;
         o.labId = t.labId;
         o.mentorId = t.mentorId;
+        o.targetMentorId = targetMentorId;
         o.roundNo = round;
         o.type = type;
         o.rankNo = rank;

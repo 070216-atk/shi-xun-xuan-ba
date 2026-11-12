@@ -52,6 +52,10 @@ export const inviteStudents = (body) => http.post('/teacher/invites', body)
 export const uninviteStudent = (studentId, round = 1) => http.del(`/teacher/invites/${studentId}?round=${round}`)
 /** 自动录取：sortBy = score | manual */
 export const autoAdmit = (body) => http.post('/teacher/lists/auto', body)
+/** 别人指定调剂给我的学生 */
+export const getAdjustInbox = (round = 1) => http.get(`/teacher/adjust-inbox?round=${round}`)
+export const acceptAdjust = (offerId, round = 1) => http.post(`/teacher/adjust-inbox/${offerId}/accept?round=${round}`)
+export const rejectAdjust = (offerId, body, round = 1) => http.post(`/teacher/adjust-inbox/${offerId}/reject?round=${round}`, body)
 /** body: { round, attitude, logic, coding, time, comment } */
 export const saveScore = (studentId, body) => http.put(`/teacher/scores/${studentId}`, body)
 export const getTeacherLists = (round = 1) => http.get(`/teacher/lists?round=${round}`)

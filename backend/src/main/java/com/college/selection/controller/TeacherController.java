@@ -109,4 +109,34 @@ public class TeacherController {
         return Result.ok(teacherService.autoAdmit(userId,
                 req.round == null ? 1 : req.round, req.sortBy));
     }
+
+    // ---------------- 内部调剂（我作为接收方） ----------------
+
+    /** 别人指定调剂给我的学生 */
+    @GetMapping("/adjust-inbox")
+    public Result<List<com.college.selection.entity.Offer>> adjustInbox(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(teacherService.adjustInbox(userId, round));
+    }
+
+    /** 接收调剂：直接变成我的拟录取（不再二次面试） */
+    @PostMapping("/adjust-inbox/{offerId}/accept")
+    public Result<Map<String, Object>> acceptAdjust(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @PathVariable Long offerId,
+            @RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(teacherService.acceptAdjust(userId, round, offerId));
+    }
+
+    /** 拒绝调剂：退回发起人 */
+    @PostMapping("/adjust-inbox/{offerId}/reject")
+    public Result<Map<String, Object>> rejectAdjust(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @PathVariable Long offerId,
+            @RequestParam(defaultValue = "1") Integer round,
+            @RequestBody(required = false) Map<String, String> body) {
+        String reason = body == null ? null : body.get("reason");
+        return Result.ok(teacherService.rejectAdjust(userId, round, offerId, reason));
+    }
 }
