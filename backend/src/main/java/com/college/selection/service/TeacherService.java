@@ -130,6 +130,15 @@ public class TeacherService {
     public Map<String, Object> uninvite(Long teacherId, Integer round, Long studentId) {
         SysUser t = requireTeacher(teacherId);
         stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_REFILL);
+
+        // 已经进了我的名单就不能直接取消入围，否则名单和面试范围会对不上
+        for (Offer o : offerMapper.findByMentor(t.mentorId, round)) {
+            if (o.studentId.equals(studentId) && !"VOID".equals(o.status) && !"DECLINED".equals(o.status)) {
+                throw new BizException(2007,
+                        who(studentId) + " 已经在你的名单里（" + o.type + "），请先从名单中移除再取消入围");
+            }
+        }
+
         inviteMapper.delete(round, t.mentorId, studentId);
 
         Map<String, Object> m = new LinkedHashMap<>();
@@ -269,6 +278,19 @@ public class TeacherService {
                             who(sid) + " 还没有进入本室面试名单，不能写入名单（请先在「报名学生」里拉进面试）");
                 }
             }
+            // 名单是"面试之后"才出的，没打分的人不能被写进任何一份名单
+            Map<Long, Double> scored = new LinkedHashMap<>();
+            for (ApplicantVO a : inviteMapper.findInterviewList(t.labId, round)) {
+                if (a.scoreTotal != null) {
+                    scored.put(a.studentId, a.scoreTotal);
+                }
+            }
+            for (Long sid : allStudents) {
+                if (!scored.containsKey(sid)) {
+                    throw new BizException(2007,
+                            who(sid) + " 还没有面试评分，请先在「面试评价」里打分，再写入名单");
+                }
+            }
         }
 
         for (Long studentId : admitted) {
@@ -354,7 +376,13 @@ public class TeacherService {
 
         List<Long> ordered = new ArrayList<>();
         for (ApplicantVO a : pool) {
-            ordered.add(a.studentId);
+            // 只有评过分的人参与自动录取，否则会被"未评分不能进名单"的校验挡住
+            if (a.scoreTotal != null) {
+                ordered.add(a.studentId);
+            }
+        }
+        if (ordered.isEmpty()) {
+            throw new BizException(2007, "面试名单里还没有已评分的学生，无法自动录取");
         }
 
         if ("manual".equalsIgnoreCase(sortBy)) {
@@ -425,6 +453,16 @@ public class TeacherService {
         if (quota == null || used >= quota) {
             throw new BizException(ErrorCode.QUOTA_FULL,
                     String.format("你的名额已满（%d/%d），不能再接收调剂学生", used, quota));
+        }
+
+        // 两种情况会导致唯一键冲突，必须提前拦住（否则数据库直接抛 500）
+        if (offerMapper.countActiveOffer(o.studentId, t.mentorId, round) > 0) {
+            throw new BizException(2007,
+                    who(o.studentId) + " 已经是你的拟录取/递补，不能重复接收这条调剂");
+        }
+        if (offerMapper.countAnyConfirmed(o.studentId, round) > 0) {
+            throw new BizException(2007,
+                    who(o.studentId) + " 已经确认了其他导师的去向，不能再接收");
         }
 
         o.status = "VOID";

@@ -190,6 +190,16 @@ public interface OfferMapper {
             """)
     int releaseConfirmed(@Param("id") Long id);
 
+    /** 该学生在本轮是否已经有这个导师的有效意向（拟录取/递补/调剂候选，未作废的） */
+    @Select("""
+            SELECT COUNT(*) FROM offer
+             WHERE student_id = #{studentId} AND mentor_id = #{mentorId} AND round_no = #{round}
+               AND status NOT IN ('VOID', 'DECLINED')
+            """)
+    int countActiveOffer(@Param("studentId") Long studentId,
+                         @Param("mentorId") Long mentorId,
+                         @Param("round") Integer round);
+
     /** 该学生本轮还有几条"已下发但未确认"的拟录取 */
     @Select("""
             SELECT COUNT(*) FROM offer
