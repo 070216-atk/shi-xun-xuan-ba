@@ -25,7 +25,9 @@ const routes = [
       { path: 'admin/quotas', component: () => import('../views/admin/Quotas.vue'), meta: { role: 'admin' } },
       { path: 'admin/adjust', component: () => import('../views/admin/Adjust.vue'), meta: { role: 'admin' } },
       { path: 'admin/publicity', component: () => import('../views/admin/Publicity.vue'), meta: { role: 'admin' } },
-      { path: 'admin/dashboard', component: () => import('../views/admin/Dashboard.vue'), meta: { role: 'admin' } }
+      { path: 'admin/dashboard', component: () => import('../views/admin/Dashboard.vue'), meta: { role: 'admin' } },
+      { path: 'admin/notices', component: () => import('../views/admin/Notices.vue'), meta: { role: 'admin' } },
+      { path: 'admin/logs', component: () => import('../views/admin/Logs.vue'), meta: { role: 'admin' } }
     ]
   },
 

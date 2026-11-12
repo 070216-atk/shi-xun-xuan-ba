@@ -26,6 +26,8 @@ export const getLabs = (round = 1) => http.get(`/labs?round=${round}`)
 export const getLab = (id, round = 1) => http.get(`/labs/${id}?round=${round}`)
 /** 公示状态 + 最终名单（公开接口，不用登录；未公示时返回 null） */
 export const getPublicPublicity = (round = 1) => http.get(`/publicity?round=${round}`)
+/** 首页通知公告（公开接口） */
+export const getNotices = () => http.get('/notices')
 
 // ---------------- 学生端 ----------------
 
@@ -45,6 +47,8 @@ export const saveScore = (studentId, body) => http.put(`/teacher/scores/${studen
 export const getTeacherLists = (round = 1) => http.get(`/teacher/lists?round=${round}`)
 /** body: { round, admitted: [id], waitlist: [id], adjustCandidates: [id] } */
 export const saveTeacherLists = (body) => http.put('/teacher/lists', body)
+/** 撤销已确认的录取，会自动按递补顺位补位 */
+export const revokeAdmit = (body) => http.post('/teacher/lists/revoke', body)
 
 // ---------------- 管理端 ----------------
 
@@ -66,3 +70,14 @@ export const addObjection = (body) => http.post('/admin/publicity/objections', b
 export const resolveObjections = (round = 1) => http.post(`/admin/publicity/objections/resolve?round=${round}`)
 export const openRound = (round) => http.post('/admin/rounds', { round })
 export const getDashboard = (round = 1) => http.get(`/admin/dashboard?round=${round}`)
+
+// ---------------- 公告 / 日志 ----------------
+
+export const getAdminNotices = () => http.get('/admin/notices')
+export const saveNotice = (body) => http.post('/admin/notices', body)
+export const deleteNotice = (id) => http.del(`/admin/notices/${id}`)
+
+export function getLogs({ page = 1, size = 20, action = '' } = {}) {
+  const qs = `page=${page}&size=${size}` + (action ? `&action=${encodeURIComponent(action)}` : '')
+  return http.get(`/admin/logs?${qs}`)
+}

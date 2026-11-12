@@ -46,7 +46,16 @@
 
     <div class="card" style="text-align:center">
       <el-button type="primary" size="large" :loading="saving" @click="submit">提交三份名单并发出拟录取</el-button>
-      <p class="muted">提交后系统向学生发出拟录取意向；仅收到 1 个意向的学生将自动确认。</p>
+      <p class="muted">提交后系统向学生发出拟录取意向；进入「拟录取与学生确认」阶段时，只有 1 个意向的学生会自动确认。</p>
+    </div>
+
+    <div v-if="confirmed.length" class="card">
+      <div class="page-title">已确认名单（可撤销）</div>
+      <p class="muted">撤销后名额立即释放，并按递补顺位自动补位；每次撤销都会写入操作日志。</p>
+      <div v-for="c in confirmed" :key="c" class="rank-row">
+        <span>{{ nameOf(c) }} <el-tag type="success" size="small">已确认</el-tag></span>
+        <el-button size="small" type="danger" plain @click="revoke(c)">撤销录取</el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -54,7 +63,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { store, labById, loadTeacher, submitLists } from '../../store'
+import { store, labById, loadTeacher, submitLists, revokeAdmit } from '../../store'
 
 const lab = computed(() => labById(store.user?.labId))
 const quota = computed(() => {
@@ -70,6 +79,42 @@ const saving = ref(false)
 const interviewed = computed(() =>
   (store.applicants || []).filter(r => r.scoreAttitude != null)
 )
+
+// 已经确认了本导师的学生（可以撤销）
+const confirmed = computed(() => {
+  const saved = store.labLists[store.user?.labId]
+  if (!saved || !saved.admitStatus) return []
+  return saved.admit.filter(code => saved.admitStatus[code] === 'CONFIRMED')
+})
+
+async function revoke(code) {
+  let reason = ''
+  try {
+    const r = await ElMessageBox.prompt(
+      `确认撤销 ${nameOf(code)} 的录取？撤销后名额立即释放，并按递补顺位自动补位。请填写原因：`,
+      '撤销录取',
+      {
+        type: 'warning',
+        confirmButtonText: '确认撤销',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：学生主动放弃 / 经沟通调整到其他实训室',
+        inputValidator: (v) => (v && v.trim() ? true : '必须填写撤销原因')
+      }
+    )
+    reason = r.value.trim()
+  } catch { return }
+
+  try {
+    const res = await revokeAdmit(code, reason)
+    ElMessage.success(
+      res.promotedName
+        ? `已撤销 ${nameOf(code)}，并自动递补：${res.promotedName}`
+        : `已撤销 ${nameOf(code)}（暂无递补人选）`
+    )
+  } catch (e) {
+    ElMessage.error(e.message || '撤销失败')
+  }
+}
 
 function nameOf(code) {
   const r = (store.applicants || []).find(x => x.code === code)

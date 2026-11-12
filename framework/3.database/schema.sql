@@ -26,6 +26,7 @@ USE lab_selection;
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS notice;
 DROP TABLE IF EXISTS notification;
 DROP TABLE IF EXISTS operation_log;
 DROP TABLE IF EXISTS publicity;
@@ -274,6 +275,21 @@ CREATE TABLE notification (
   KEY idx_notify_user (user_id, is_read, created_at),
   CONSTRAINT fk_notify_user FOREIGN KEY (user_id) REFERENCES sys_user (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='站内通知';
+
+-- ------------------------------------------------------------
+-- 13. 通知公告
+-- ------------------------------------------------------------
+CREATE TABLE notice (
+  id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  title        VARCHAR(200)    NOT NULL,
+  content      VARCHAR(2000)   DEFAULT NULL,
+  publisher_id BIGINT UNSIGNED DEFAULT NULL COMMENT '发布人 sys_user.id',
+  is_top       TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '1 置顶',
+  status       TINYINT         NOT NULL DEFAULT 1 COMMENT '1 发布 0 下线',
+  created_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_notice (status, is_top, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='通知公告';
 
 -- ============================================================
 --  学生状态枚举（不建表，由 application + offer + publicity 推导）

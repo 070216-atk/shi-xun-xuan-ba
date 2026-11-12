@@ -35,3 +35,5 @@ desktop.ini
 *.tmp
 ~$*
 *.bak
+backend/src/main/resources/static/
+deploy/

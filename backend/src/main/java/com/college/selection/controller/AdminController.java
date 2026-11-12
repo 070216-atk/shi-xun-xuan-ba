@@ -131,6 +131,14 @@ public class AdminController {
         return Result.ok(adminService.dashboard(round));
     }
 
+    /** 操作日志查询（分页 + 按动作筛选） */
+    @GetMapping("/logs")
+    public Result<Map<String, Object>> logs(@RequestParam(defaultValue = "1") Integer page,
+                                            @RequestParam(defaultValue = "20") Integer size,
+                                            @RequestParam(required = false) String action) {
+        return Result.ok(adminService.logs(page, size, action));
+    }
+
     /** 提交一条公示异议（登记用，处理在线下） */
     @PostMapping("/publicity/objections")
     public Result<Void> addObjection(

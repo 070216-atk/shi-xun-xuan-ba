@@ -68,7 +68,9 @@ const roleMenus = {
     { path: '/admin/quotas', label: '名额与补录' },
     { path: '/admin/adjust', label: '统筹调剂' },
     { path: '/admin/publicity', label: '公示管理' },
-    { path: '/admin/dashboard', label: '数据看板' }
+    { path: '/admin/dashboard', label: '数据看板' },
+    { path: '/admin/notices', label: '公告管理' },
+    { path: '/admin/logs', label: '操作日志' }
   ]
 }
 const menus = computed(() => {

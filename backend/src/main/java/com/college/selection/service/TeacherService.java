@@ -8,7 +8,9 @@ import com.college.selection.dto.TeacherListsReq;
 import com.college.selection.dto.TeacherListsVO;
 import com.college.selection.entity.Offer;
 import com.college.selection.entity.SysUser;
+import com.college.selection.mapper.MentorMapper;
 import com.college.selection.mapper.OfferMapper;
+import com.college.selection.mapper.OperationLogMapper;
 import com.college.selection.mapper.SysUserMapper;
 import com.college.selection.mapper.TeacherMapper;
 import org.springframework.stereotype.Service;
@@ -31,15 +33,18 @@ public class TeacherService {
     private final OfferMapper offerMapper;
     private final SysUserMapper userMapper;
     private final StageService stageService;
+    private final OperationLogMapper logMapper;
 
     public TeacherService(TeacherMapper teacherMapper,
                           OfferMapper offerMapper,
                           SysUserMapper userMapper,
-                          StageService stageService) {
+                          StageService stageService,
+                          OperationLogMapper logMapper) {
         this.teacherMapper = teacherMapper;
         this.offerMapper = offerMapper;
         this.userMapper = userMapper;
         this.stageService = stageService;
+        this.logMapper = logMapper;
     }
 
     /** 取出当前登录的导师，校验角色和绑定关系 */
@@ -176,6 +181,59 @@ public class TeacherService {
     private String who(Long studentId) {
         SysUser u = userMapper.findById(studentId);
         return u == null ? ("学生 #" + studentId) : (u.realName + "（" + u.code + "）");
+    }
+
+    /**
+     * 撤销已确认的录取。
+     *
+     * 做三件事：
+     *   1. 把那条 offer 置为 VOID（不删除，留痕）
+     *   2. 按递补顺位把下一名提升为拟录取
+     *   3. 写操作日志（含前后状态）
+     */
+    @Transactional
+    public java.util.Map<String, Object> revoke(Long teacherId, Integer round, Long studentId, String reason) {
+        SysUser t = requireTeacher(teacherId);
+        if (reason == null || reason.isBlank()) {
+            throw new BizException(2007, "撤销录取必须填写原因");
+        }
+
+        Offer target = null;
+        java.util.List<Offer> all = offerMapper.findByMentor(t.mentorId, round);
+        for (Offer o : all) {
+            if (o.studentId.equals(studentId) && "CONFIRMED".equals(o.status)) {
+                target = o;
+                break;
+            }
+        }
+        if (target == null) {
+            throw new BizException(2006, "该学生没有确认你的录取意向，无需撤销");
+        }
+
+        offerMapper.updateStatus(target.id, "VOID", null);
+        logMapper.insertWithState(teacherId, "TEACHER", "REVOKE_ADMIT", "OFFER", target.id,
+                "CONFIRMED", "VOID", "撤销 " + who(studentId) + " 的录取，原因：" + reason);
+
+        // 顺位递补：把本导师递补里 rank 最小的那个提为拟录取
+        Offer next = null;
+        for (Offer o : all) {
+            if ("WAITLIST".equals(o.type) && "ISSUED".equals(o.status)) {
+                if (next == null || (o.rankNo != null && (next.rankNo == null || o.rankNo < next.rankNo))) {
+                    next = o;
+                }
+            }
+        }
+        Long promotedStudentId = null;
+        if (next != null) {
+            offerMapper.promoteToAdmitted(next.id, stageService.getEndAt(round, STAGE_CONFIRM));
+            promotedStudentId = next.studentId;
+        }
+
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("revokedStudentId", studentId);
+        m.put("promotedStudentId", promotedStudentId);
+        m.put("promotedName", promotedStudentId == null ? null : who(promotedStudentId));
+        return m;
     }
 
     private Offer insert(SysUser t, Integer round, Long studentId, String type, Integer rank,

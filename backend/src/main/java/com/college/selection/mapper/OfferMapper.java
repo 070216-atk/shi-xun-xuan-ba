@@ -125,7 +125,15 @@ public interface OfferMapper {
             """)
     List<Long> findConfirmedStudentIds(@Param("mentorId") Long mentorId, @Param("round") Integer round);
 
-    /** 结算时把本轮"已下发未确认"的拟录取截止时间统一刷新 */
+    /** 撤销录取后，把递补第一名提升为拟录取 */
+    @Update("""
+            UPDATE offer
+               SET type = 'ADMITTED', rank_no = NULL, confirm_deadline = #{deadline}
+             WHERE id = #{id} AND status = 'ISSUED'
+            """)
+    int promoteToAdmitted(@Param("id") Long id, @Param("deadline") LocalDateTime deadline);
+
+    /** 结算时刷新 deadline 用 */
     @Update("""
             UPDATE offer
                SET confirm_deadline = #{deadline}

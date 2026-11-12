@@ -3,6 +3,7 @@ package com.college.selection.controller;
 import com.college.selection.common.Result;
 import com.college.selection.config.LoginInterceptor;
 import com.college.selection.dto.ApplicantVO;
+import com.college.selection.dto.RevokeReq;
 import com.college.selection.dto.ScoreReq;
 import com.college.selection.dto.TeacherListsReq;
 import com.college.selection.dto.TeacherListsVO;
@@ -56,5 +57,14 @@ public class TeacherController {
             @RequestBody TeacherListsReq req) {
         teacherService.saveLists(userId, req.round == null ? 1 : req.round, req);
         return Result.ok(null);
+    }
+
+    /** 撤销已确认的录取（会自动按递补顺位补位，并写操作日志） */
+    @PostMapping("/lists/revoke")
+    public Result<java.util.Map<String, Object>> revoke(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestBody RevokeReq req) {
+        return Result.ok(teacherService.revoke(userId,
+                req.round == null ? 1 : req.round, req.studentId, req.reason));
     }
 }

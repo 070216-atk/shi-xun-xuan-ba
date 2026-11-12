@@ -165,6 +165,20 @@ INSERT INTO stage (round_no, stage_no, name, start_at, end_at, description) VALU
 -- SELECT stage_no, name, start_at, end_at FROM stage ORDER BY stage_no;
 
 -- ------------------------------------------------------------
+-- 通知公告（管理端可增删改，前台首页展示）
+-- ------------------------------------------------------------
+INSERT INTO notice (title, content, publisher_id, is_top, status) VALUES
+('2026 年实训室进组选拔开始',
+ '202 / 204 / 402 / 404 / 406 / 505 六个实训室同步招录，每室 64 人。请先参加集中宣讲与开放日，再在填报窗口内提交意向。',
+ (SELECT id FROM sys_user WHERE username = 'admin'), 1, 1),
+('填报规则说明',
+ '最多填报 3 位导师，不分先后顺序；须同时选择是否服从「实训室内部调剂」与「全院跨实训室调剂」。截止后锁定，不可修改。',
+ (SELECT id FROM sys_user WHERE username = 'admin'), 0, 1),
+('面试提醒',
+ '无论报名人数是否满额，所有报名学生均须参加实训室统一面试。请在「我的选拔」查看面试安排，面试后由导师录入四维评分。',
+ (SELECT id FROM sys_user WHERE username = 'admin'), 0, 1);
+
+-- ------------------------------------------------------------
 -- 导入后必跑：名额一致性校验（每个室都应显示 OK）
 -- ------------------------------------------------------------
 SELECT l.code,

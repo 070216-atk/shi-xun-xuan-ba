@@ -48,7 +48,7 @@ public class OfferService {
      *   2) 再锁 mentor 行  → 保证同一个导师的名额不被并发超录
      * 两个学生确认不同 offer 但同一导师时，会在第 2 步排队。
      */
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public Map<String, Object> confirm(Long studentId, Long offerId) {
         Offer offer = offerMapper.lockById(offerId);
         if (offer == null) {
@@ -70,6 +70,11 @@ public class OfferService {
         stageService.assertOpen(offer.roundNo, STAGE_CONFIRM);
 
         Integer quota = offerMapper.lockMentorQuota(offer.mentorId);
+        // 这里能安全地用普通 COUNT，是因为本方法把隔离级别降到了 READ COMMITTED：
+        // 在 REPEATABLE READ 下，普通 SELECT 读的是事务开始时的快照，
+        // 等锁拿到之后仍然看到旧值（都是 0），三个人会同时认为还有空位。
+        // READ COMMITTED 下每次查询都读最新已提交数据，配合上面的导师行锁即可正确串行化。
+        // （不要改成 "SELECT ... FOR UPDATE" 去数：范围锁会和 lockById 的单行锁互相等待，引发死锁）
         int confirmed = offerMapper.countConfirmed(offer.mentorId, offer.roundNo);
         if (quota == null || confirmed >= quota) {
             throw new BizException(ErrorCode.QUOTA_FULL, "该导师名额已满");

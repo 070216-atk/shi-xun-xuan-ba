@@ -35,6 +35,7 @@ export const store = reactive({
 export const labs = reactive([])
 export const stages = reactive([])
 export const students = reactive([])
+export const notices = reactive([])
 
 // 学号 <-> 后端数字 id
 const idToCode = {}
@@ -89,8 +90,7 @@ export async function loadPublic() {
   return { labs, stages }
 }
 
-export async function loadLab(id) {
-  const d = await api.getLab(id, store.round)
+export async function loadLab(id) {  const d = await api.getLab(id, store.round)
   const merged = { ...d, mentors: d.mentors || [] }
   const i = labs.findIndex((l) => String(l.id) === String(id))
   if (i >= 0) labs.splice(i, 1, merged)
@@ -101,7 +101,6 @@ export async function loadLab(id) {
 export function labById(id) {
   return labs.find((l) => String(l.id) === String(id))
 }
-
 export function appliedCount(labId) {
   const l = labById(labId)
   return l ? l.applied || 0 : 0
@@ -292,10 +291,16 @@ export async function loadTeacher() {
   const pick = (arr) => (arr || []).map((o) => idToCode[o.studentId] || String(o.studentId))
   const mine = lists.mentorId
   if (mine) {
+    // 记录每条拟录取的状态，导师端要据此显示"已确认/待确认"和撤销按钮
+    const admitStatus = {}
+    for (const o of lists.admitted || []) {
+      admitStatus[idToCode[o.studentId] || String(o.studentId)] = o.status
+    }
     store.labLists[labId] = {
       admit: pick(lists.admitted),
       waitlist: pick(lists.waitlist),
-      adjust: pick(lists.adjustCandidates)
+      adjust: pick(lists.adjustCandidates),
+      admitStatus
     }
   }
 }
@@ -435,3 +440,39 @@ export async function resolveObjections() {
 }
 
 export { fmt }
+
+
+// ---------------- 公告 ----------------
+
+export async function loadNotices() {
+  const list = await api.getNotices()
+  notices.splice(
+    0,
+    notices.length,
+    ...list.map((n) => ({
+      id: n.id,
+      title: n.title,
+      content: n.content,
+      date: fmt(n.createdAt).slice(0, 10),
+      isTop: !!n.isTop,
+      publisher: n.publisherName || ''
+    }))
+  )
+  return notices
+}
+
+// ---------------- 操作日志 ----------------
+
+export function loadLogs(params) {
+  return api.getLogs(params)
+}
+
+// ---------------- 导师撤销录取 ----------------
+
+export async function revokeAdmit(studentCode, reason) {
+  const sid = codeToId[studentCode]
+  if (!sid) throw new Error('找不到该学生')
+  const r = await api.revokeAdmit({ round: store.round, studentId: sid, reason })
+  await loadTeacher()
+  return r
+}

@@ -18,10 +18,17 @@
 
     <div class="card">
       <div class="page-title">通知公告</div>
-      <div v-for="n in notices" :key="n.title" class="notice">
-        <div class="notice-head"><b>{{ n.title }}</b><span class="muted">{{ n.date }}</span></div>
+      <div v-for="n in notices" :key="n.id" class="notice">
+        <div class="notice-head">
+          <b>
+            <el-tag v-if="n.isTop" type="danger" size="small" style="margin-right:6px">置顶</el-tag>
+            {{ n.title }}
+          </b>
+          <span class="muted">{{ n.date }}</span>
+        </div>
         <p class="muted">{{ n.content }}</p>
       </div>
+      <el-empty v-if="!notices.length" description="暂无公告" :image-size="60" />
     </div>
 
     <div class="card" style="text-align:center">
@@ -31,24 +38,14 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { stages, store } from '../store'
+import { computed, onMounted } from 'vue'
+import { stages, notices, store, loadNotices } from '../store'
 
 const currentStage = computed(() => stages.find(s => s.id === store.currentStage))
 
-// 公告暂未做接口，先用固定文案
-const notices = [
-  {
-    title: '2026 年实训室进组选拔开始',
-    date: '宣讲当天',
-    content: '202 / 204 / 402 / 404 / 406 / 505 六个实训室同步招录，每室 64 人。请先参加集中宣讲与开放日，再在填报窗口内提交意向。'
-  },
-  {
-    title: '填报规则说明',
-    date: '填报前必读',
-    content: '最多填报 3 位导师，不分先后顺序；须同时选择是否服从「实训室内部调剂」与「全院跨实训室调剂」。截止后锁定，不可修改。'
-  }
-]
+onMounted(() => {
+  loadNotices().catch(() => {})
+})
 </script>
 
 <style scoped>

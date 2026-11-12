@@ -381,6 +381,24 @@ public class AdminService {
         return adminMapper.confirmedResults(round);
     }
 
+    // ---------------- 操作日志 ----------------
+
+    public Map<String, Object> logs(Integer page, Integer size, String action) {
+        int p = (page == null || page < 1) ? 1 : page;
+        int s = (size == null || size < 1) ? 20 : Math.min(size, 200);
+        List<com.college.selection.entity.OperationLog> list =
+                logMapper.page(action, (p - 1) * s, s);
+        int total = logMapper.count(action);
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("list", list);
+        m.put("total", total);
+        m.put("page", p);
+        m.put("size", s);
+        m.put("actions", logMapper.distinctActions());
+        return m;
+    }
+
     // ---------------- 看板 ----------------
 
     public Map<String, Object> dashboard(Integer round) {
