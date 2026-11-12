@@ -471,6 +471,11 @@ public class AdminService {
     public Map<String, Object> assignPlacement(Long adminId, Integer round, Long studentId,
                                                Long mentorId, String reason) {
         requireAdmin(adminId);
+        Publicity pub = adminMapper.latestPublicity(round);
+        if (pub != null && ("PUBLISHED".equals(pub.status) || "ENDED".equals(pub.status))) {
+            throw new BizException(2010, "最终名单已经公示，不能再改安置结果；如需调整请先作废公示");
+        }
+
         if (studentId == null || mentorId == null) {
             throw new BizException(2007, "必须同时指定学生和导师");
         }
@@ -638,6 +643,11 @@ public class AdminService {
     @Transactional
     public Map<String, Object> finalizePlacement(Long adminId, Integer round, boolean includeRefusers) {
         requireAdmin(adminId);
+        Publicity pub = adminMapper.latestPublicity(round);
+        if (pub != null && ("PUBLISHED".equals(pub.status) || "ENDED".equals(pub.status))) {
+            throw new BizException(2010, "最终名单已经公示，不能再改安置结果；如需调整请先作废公示");
+        }
+
         LocalDateTime now = LocalDateTime.now();
 
         List<Map<String, Object>> caps = adminMapper.mentorCapacity(round);

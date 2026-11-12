@@ -3,6 +3,7 @@ package com.college.selection.service;
 import com.college.selection.common.BizException;
 import com.college.selection.common.ErrorCode;
 import com.college.selection.entity.Offer;
+import com.college.selection.mapper.AdminMapper;
 import com.college.selection.mapper.OfferMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,10 +25,20 @@ public class OfferService {
 
     private final OfferMapper offerMapper;
     private final StageService stageService;
+    private final AdminMapper adminMapper;
 
-    public OfferService(OfferMapper offerMapper, StageService stageService) {
+    public OfferService(OfferMapper offerMapper, StageService stageService, AdminMapper adminMapper) {
         this.offerMapper = offerMapper;
         this.stageService = stageService;
+        this.adminMapper = adminMapper;
+    }
+
+    /** 一旦公示发布或结束，去向就锁定了，学生不能再确认/撤销 */
+    private void assertNotPublished(Integer round) {
+        var p = adminMapper.latestPublicity(round);
+        if (p != null && ("PUBLISHED".equals(p.status) || "ENDED".equals(p.status))) {
+            throw new BizException(2010, "最终名单已经公示，去向已锁定，不能再修改");
+        }
     }
 
     /** 本人某轮的全部意向，按 拟录取 → 递补 → 调剂候选 排序 */
@@ -71,6 +82,7 @@ public class OfferService {
         // 确认窗口以"阶段 5 或分轮补录是否开放"为准。
         // 不用 offer.confirm_deadline 判断：那个值是发名单时算的，那时阶段 5 可能还没配置。
         stageService.assertAnyOpen(offer.roundNo, STAGE_CONFIRM, STAGE_REFILL);
+        assertNotPublished(offer.roundNo);
 
         Integer quota = offerMapper.lockMentorQuota(offer.mentorId);
         // 这里能安全地用普通 COUNT，是因为本方法把隔离级别降到了 READ COMMITTED：
@@ -122,6 +134,7 @@ public class OfferService {
             throw new BizException(2006, "该意向当前不是「已确认」状态，无需撤销");
         }
         stageService.assertAnyOpen(offer.roundNo, STAGE_CONFIRM, STAGE_REFILL);
+        assertNotPublished(offer.roundNo);
 
         offerMapper.releaseConfirmed(offer.id);
         Offer promoted = promoteNextWaitlist(offer.mentorId, offer.roundNo);
