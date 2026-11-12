@@ -217,6 +217,51 @@ public interface AdminMapper {
             """)
     java.util.List<java.util.Map<String, Object>> confirmedResults(@Param("round") Integer round);
 
+    // ---------------- 收口安置（确保每个人都有实训室） ----------------
+
+    /** 本轮已提交填报的学生 */
+    @Select("""
+            SELECT DISTINCT a.student_id FROM application a
+             WHERE a.round_no = #{round} AND a.status = 'SUBMITTED'
+            """)
+    java.util.List<Long> appliedStudentIds(@Param("round") Integer round);
+
+    /** 本轮已经有确认去向的学生 */
+    @Select("""
+            SELECT DISTINCT student_id FROM offer
+             WHERE round_no = #{round} AND status = 'CONFIRMED'
+            """)
+    java.util.List<Long> confirmedStudentIds(@Param("round") Integer round);
+
+    /** 每个导师的容量：名额 / 已确认（remaining 由 service 算） */
+    @Select("""
+            SELECT m.id AS mentorId, m.lab_id AS labId, l.code AS labCode, l.name AS labName,
+                   m.name AS mentorName, m.quota AS quota,
+                   (SELECT COUNT(*) FROM offer o
+                     WHERE o.mentor_id = m.id AND o.round_no = #{round}
+                       AND o.type = 'ADMITTED' AND o.status = 'CONFIRMED') AS confirmed
+              FROM mentor m JOIN lab l ON l.id = m.lab_id
+             ORDER BY l.code, m.sort_no, m.id
+            """)
+    java.util.List<java.util.Map<String, Object>> mentorCapacity(@Param("round") Integer round);
+
+    /** 已填报学生的调剂意愿 + 报过的实训室 */
+    @Select("""
+            SELECT a.student_id AS studentId, ai.lab_id AS labId,
+                   a.adjust_in_lab AS adjustInLab, a.adjust_cross AS adjustCross
+              FROM application a JOIN application_item ai ON ai.application_id = a.id
+             WHERE a.round_no = #{round} AND a.status = 'SUBMITTED'
+            """)
+    java.util.List<java.util.Map<String, Object>> studentWishes(@Param("round") Integer round);
+
+    /** 一个学生有多条确认（校验用，正常应为空） */
+    @Select("""
+            SELECT student_id AS studentId, COUNT(*) AS cnt FROM offer
+             WHERE round_no = #{round} AND status = 'CONFIRMED'
+             GROUP BY student_id HAVING COUNT(*) > 1
+            """)
+    java.util.List<java.util.Map<String, Object>> duplicateConfirmed(@Param("round") Integer round);
+
     // ---------------- 学生名单 ----------------
 
     @Select("""

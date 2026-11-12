@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -291,6 +292,18 @@ public class AdminService {
         if (last != null && "PUBLISHED".equals(last.status)) {
             throw new BizException(2010, "已经处于公示中，请先结束本次公示");
         }
+
+        // 公示前必须收口：每个人都要有且只有一个实训室，导师不能超录
+        Map<String, Object> verify = placementVerify(round);
+        if (!Boolean.TRUE.equals(verify.get("ok"))) {
+            int missing = ((List<?>) verify.get("missing")).size();
+            int dup = ((List<?>) verify.get("duplicate")).size();
+            int over = ((List<?>) verify.get("overQuota")).size();
+            throw new BizException(2010,
+                    String.format("还不能公示：还有 %d 人没有实训室、%d 人有重复去向、%d 位导师超录。请先在「收口安置」里处理后重试",
+                            missing, dup, over));
+        }
+
         int d = (days == null || days < 1) ? 1 : days;
         LocalDateTime now = LocalDateTime.now();
 
@@ -379,6 +392,291 @@ public class AdminService {
     /** 已确认的最终名单（公示用） */
     public List<Map<String, Object>> confirmedResults(Integer round) {
         return adminMapper.confirmedResults(round);
+    }
+
+    // ---------------- 收口安置（确保每个人都有实训室） ----------------
+
+    private boolean asBool(Object v) {
+        if (v == null) return false;
+        if (v instanceof Boolean) return (Boolean) v;
+        if (v instanceof Number) return ((Number) v).intValue() != 0;
+        return "true".equalsIgnoreCase(v.toString()) || "1".equals(v.toString());
+    }
+
+    private Map<Long, Integer> capacityLeft(Integer round) {
+        Map<Long, Integer> left = new LinkedHashMap<>();
+        for (Map<String, Object> c : adminMapper.mentorCapacity(round)) {
+            long mid = ((Number) c.get("mentorId")).longValue();
+            int quota = ((Number) c.get("quota")).intValue();
+            int confirmed = ((Number) c.get("confirmed")).intValue();
+            left.put(mid, Math.max(0, quota - confirmed));
+        }
+        return left;
+    }
+
+    private Map<Long, Map<String, Object>> studentInfo() {
+        Map<Long, Map<String, Object>> info = new LinkedHashMap<>();
+        for (Map<String, Object> s : adminMapper.allStudents()) {
+            info.put(((Number) s.get("studentId")).longValue(), s);
+        }
+        return info;
+    }
+
+    /** 挑一个还有空位的导师；onlyLabs=true 时只在指定实训室里挑 */
+    private Long pickMentor(Map<Long, Integer> left, List<Map<String, Object>> caps,
+                            java.util.Set<Long> labs, boolean onlyLabs) {
+        for (Map<String, Object> c : caps) {
+            long mid = ((Number) c.get("mentorId")).longValue();
+            long labId = ((Number) c.get("labId")).longValue();
+            if (left.getOrDefault(mid, 0) <= 0) continue;
+            if (onlyLabs && (labs == null || !labs.contains(labId))) continue;
+            return mid;
+        }
+        return null;
+    }
+
+    /** 直接把某个学生落到某个导师名下（已有意向就改状态，没有就新建） */
+    private void placeConfirmed(Long studentId, Long mentorId, Long labId, Integer round,
+                                LocalDateTime now, String remark) {
+        for (Offer o : offerMapper.findByStudent(studentId, round)) {
+            if (o.mentorId.equals(mentorId)
+                    && !"VOID".equals(o.status) && !"DECLINED".equals(o.status)) {
+                offerMapper.updateStatus(o.id, "CONFIRMED", now);
+                offerMapper.expireAllOther(studentId, round, o.id);
+                return;
+            }
+        }
+        Offer o = new Offer();
+        o.studentId = studentId;
+        o.labId = labId;
+        o.mentorId = mentorId;
+        o.roundNo = round;
+        o.type = "ADMITTED";
+        o.rankNo = offerMapper.maxAdmittedRank(mentorId, round) + 1;
+        o.status = "ISSUED";
+        o.issuedAt = now;
+        o.remark = remark;
+        offerMapper.insert(o);
+        offerMapper.updateStatus(o.id, "CONFIRMED", now);
+        offerMapper.expireAllOther(studentId, round, o.id);
+    }
+
+    /** 收口前的缺口清单：谁还没着落、还有多少空位、够不够 */
+    public Map<String, Object> placementGaps(Integer round) {
+        List<Long> applied = adminMapper.appliedStudentIds(round);
+        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedStudentIds(round));
+        Map<Long, Integer> left = capacityLeft(round);
+        Map<Long, Map<String, Object>> info = studentInfo();
+
+        int totalLeft = 0;
+        for (int v : left.values()) totalLeft += v;
+
+        List<Map<String, Object>> unplaced = new ArrayList<>();
+        for (Long sid : applied) {
+            if (confirmed.contains(sid)) continue;
+            Map<String, Object> s = info.get(sid);
+            Map<String, Object> u = new LinkedHashMap<>();
+            u.put("studentId", sid);
+            u.put("code", s == null ? null : s.get("code"));
+            u.put("realName", s == null ? null : s.get("realName"));
+            unplaced.add(u);
+        }
+
+        List<Map<String, Object>> available = new ArrayList<>();
+        for (Map<String, Object> c : adminMapper.mentorCapacity(round)) {
+            long mid = ((Number) c.get("mentorId")).longValue();
+            int rem = left.getOrDefault(mid, 0);
+            if (rem <= 0) continue;
+            Map<String, Object> a = new LinkedHashMap<>();
+            a.put("mentorId", mid);
+            a.put("labId", c.get("labId"));
+            a.put("labCode", c.get("labCode"));
+            a.put("labName", c.get("labName"));
+            a.put("mentorName", c.get("mentorName"));
+            a.put("remaining", rem);
+            available.add(a);
+        }
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("round", round);
+        m.put("appliedCount", applied.size());
+        m.put("confirmedCount", applied.size() - unplaced.size());
+        m.put("unplacedCount", unplaced.size());
+        m.put("totalRemaining", totalLeft);
+        m.put("feasible", totalLeft >= unplaced.size());
+        m.put("availableMentors", available);
+        m.put("unplaced", unplaced);
+        return m;
+    }
+
+    /**
+     * 收口安置：把本轮还没着落的学生一次性全部落到实训室。
+     *
+     * 顺序：
+     *   1. 有待确认拟录取的 → 按顺位定第一个（其余作废）
+     *   2. 没有任何拟录取的 → 优先同室空位，其次跨室（须服从跨室）
+     *   3. includeRefusers=true 时，对不服从调剂的人也强制安置（即"约谈后统筹"）
+     */
+    @Transactional
+    public Map<String, Object> finalizePlacement(Long adminId, Integer round, boolean includeRefusers) {
+        requireAdmin(adminId);
+        LocalDateTime now = LocalDateTime.now();
+
+        List<Map<String, Object>> caps = adminMapper.mentorCapacity(round);
+        Map<Long, Integer> left = capacityLeft(round);
+        Map<Long, Map<String, Object>> info = studentInfo();
+
+        Map<Long, java.util.Set<Long>> labsOf = new LinkedHashMap<>();
+        Map<Long, boolean[]> wishes = new LinkedHashMap<>();
+        for (Map<String, Object> w : adminMapper.studentWishes(round)) {
+            long sid = ((Number) w.get("studentId")).longValue();
+            long labId = ((Number) w.get("labId")).longValue();
+            labsOf.computeIfAbsent(sid, k -> new java.util.LinkedHashSet<>()).add(labId);
+            boolean[] bw = wishes.computeIfAbsent(sid, k -> new boolean[]{false, false});
+            if (asBool(w.get("adjustInLab"))) bw[0] = true;
+            if (asBool(w.get("adjustCross"))) bw[1] = true;
+        }
+
+        List<Long> applied = adminMapper.appliedStudentIds(round);
+        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedStudentIds(round));
+
+        int settledSingle = 0, settledMulti = 0, inLab = 0, cross = 0, forced = 0;
+        List<Long> stillUnplaced = new ArrayList<>();
+
+        for (Long sid : applied) {
+            if (confirmed.contains(sid)) continue;
+
+            List<Offer> issued = offerMapper.findIssuedAdmitted(sid, round);
+            if (!issued.isEmpty()) {
+                Offer pick = null;
+                for (Offer o : issued) {
+                    if (left.getOrDefault(o.mentorId, 0) > 0) { pick = o; break; }
+                }
+                if (pick == null) pick = issued.get(0);
+
+                offerMapper.updateStatus(pick.id, "CONFIRMED", now);
+                offerMapper.expireAllOther(sid, round, pick.id);
+                left.put(pick.mentorId, Math.max(0, left.getOrDefault(pick.mentorId, 0) - 1));
+                confirmed.add(sid);
+                if (issued.size() == 1) settledSingle++; else settledMulti++;
+                continue;
+            }
+
+            boolean[] w = wishes.getOrDefault(sid, new boolean[]{false, false});
+            java.util.Set<Long> myLabs = labsOf.getOrDefault(sid, java.util.Set.of());
+
+            // ① 同室调剂：必须是"服从实训室内部调剂"的人
+            Long target = w[0] ? pickMentor(left, caps, myLabs, true) : null;
+            String how = "同室调剂";
+            if (target != null) {
+                inLab++;
+            } else if (w[1]) {
+                // ② 跨室调剂：必须是"服从跨实训室调剂"的人
+                target = pickMentor(left, caps, null, false);
+                how = "跨室调剂";
+                if (target != null) cross++;
+            } else if (includeRefusers) {
+                target = pickMentor(left, caps, null, false);
+                how = "学院统筹（经约谈）";
+                if (target != null) forced++;
+            }
+
+            if (target == null) {
+                stillUnplaced.add(sid);
+                continue;
+            }
+
+            long labId = 0;
+            for (Map<String, Object> c : caps) {
+                if (((Number) c.get("mentorId")).longValue() == target) {
+                    labId = ((Number) c.get("labId")).longValue();
+                    break;
+                }
+            }
+            placeConfirmed(sid, target, labId, round, now, how);
+            left.put(target, Math.max(0, left.getOrDefault(target, 0) - 1));
+            confirmed.add(sid);
+        }
+
+        logMapper.insert(adminId, "ADMIN", "FINALIZE_PLACEMENT", "ROUND", round.longValue(),
+                String.format("收口安置：单意向定案 %d，多意向定案 %d，同室 %d，跨室 %d，强制 %d，仍未安置 %d",
+                        settledSingle, settledMulti, inLab, cross, forced, stillUnplaced.size()));
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("settledSingle", settledSingle);
+        m.put("settledMulti", settledMulti);
+        m.put("assignedInLab", inLab);
+        m.put("assignedCross", cross);
+        m.put("forced", forced);
+        List<Map<String, Object>> leftUnplaced = new ArrayList<>();
+        for (Long sid : stillUnplaced) {
+            Map<String, Object> s = info.get(sid);
+            Map<String, Object> u = new LinkedHashMap<>();
+            u.put("studentId", sid);
+            u.put("code", s == null ? null : s.get("code"));
+            u.put("realName", s == null ? null : s.get("realName"));
+            leftUnplaced.add(u);
+        }
+        m.put("stillUnplaced", leftUnplaced);
+        m.put("stillUnplacedCount", leftUnplaced.size());
+        m.put("verify", placementVerify(round));
+        return m;
+    }
+
+    /** 收口校验：每个已填报学生必须恰好有一个确认去向，且不能超过导师名额 */
+    public Map<String, Object> placementVerify(Integer round) {
+        List<Long> applied = adminMapper.appliedStudentIds(round);
+        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedStudentIds(round));
+        Map<Long, Map<String, Object>> info = studentInfo();
+
+        List<Map<String, Object>> missing = new ArrayList<>();
+        for (Long sid : applied) {
+            if (confirmed.contains(sid)) continue;
+            Map<String, Object> s = info.get(sid);
+            Map<String, Object> u = new LinkedHashMap<>();
+            u.put("studentId", sid);
+            u.put("code", s == null ? null : s.get("code"));
+            u.put("realName", s == null ? null : s.get("realName"));
+            u.put("problem", "没有确认去向");
+            missing.add(u);
+        }
+
+        List<Map<String, Object>> multi = new ArrayList<>();
+        for (Map<String, Object> d : adminMapper.duplicateConfirmed(round)) {
+            long sid = ((Number) d.get("studentId")).longValue();
+            Map<String, Object> s = info.get(sid);
+            Map<String, Object> u = new LinkedHashMap<>();
+            u.put("studentId", sid);
+            u.put("code", s == null ? null : s.get("code"));
+            u.put("realName", s == null ? null : s.get("realName"));
+            u.put("problem", "有多条确认（" + d.get("cnt") + " 条）");
+            multi.add(u);
+        }
+
+        List<Map<String, Object>> over = new ArrayList<>();
+        for (Map<String, Object> c : adminMapper.mentorCapacity(round)) {
+            int quota = ((Number) c.get("quota")).intValue();
+            int cf = ((Number) c.get("confirmed")).intValue();
+            if (cf > quota) {
+                Map<String, Object> u = new LinkedHashMap<>();
+                u.put("mentorName", c.get("mentorName"));
+                u.put("labCode", c.get("labCode"));
+                u.put("quota", quota);
+                u.put("confirmed", cf);
+                u.put("problem", "超录 " + (cf - quota) + " 人");
+                over.add(u);
+            }
+        }
+
+        boolean ok = missing.isEmpty() && multi.isEmpty() && over.isEmpty();
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("ok", ok);
+        m.put("appliedCount", applied.size());
+        m.put("confirmedCount", confirmed.size());
+        m.put("missing", missing);
+        m.put("duplicate", multi);
+        m.put("overQuota", over);
+        return m;
     }
 
     // ---------------- 操作日志 ----------------

@@ -32,7 +32,8 @@ export const store = reactive({
   pool: { vacancies: [], candidates: [] },
   results: [],        // 管理端：已确认的最终名单
   publicityList: [],  // 公示名单（公开接口）
-  dashboard: {}
+  dashboard: {},
+  placement: null   // 管理端：收口缺口清单
 })
 
 export const labs = reactive([])
@@ -565,6 +566,26 @@ export async function resolveObjections() {
 export { fmt }
 
 
+// ---------------- 收口安置 ----------------
+
+/** 拉取缺口清单：谁还没着落、还有多少空位 */
+export async function loadPlacement() {
+  store.placement = await api.getPlacementGaps(store.round)
+  return store.placement
+}
+
+/** 一键收口：把没着落的人全部安排掉 */
+export async function finalizePlacement(includeRefusers) {
+  const r = await api.finalizePlacement(store.round, includeRefusers)
+  await loadAdmin()
+  await loadPlacement()
+  return r
+}
+
+/** 收口校验 */
+export function verifyPlacement() {
+  return api.verifyPlacement(store.round)
+}
 // ---------------- 公告 ----------------
 
 export async function loadNotices() {

@@ -131,8 +131,30 @@ public class AdminController {
         return Result.ok(adminService.dashboard(round));
     }
 
-    /** 操作日志查询（分页 + 按动作筛选） */
-    @GetMapping("/logs")
+    // ---------------- 收口安置 ----------------
+
+    /** 缺口清单：谁还没着落、还有多少空位、够不够 */
+    @GetMapping("/placement/gaps")
+    public Result<Map<String, Object>> placementGaps(@RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(adminService.placementGaps(round));
+    }
+
+    /** 收口安置：把没着落的人一次性全部安排掉 */
+    @PostMapping("/placement/finalize")
+    public Result<Map<String, Object>> finalizePlacement(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestParam(defaultValue = "1") Integer round,
+            @RequestParam(defaultValue = "false") boolean includeRefusers) {
+        return Result.ok(adminService.finalizePlacement(userId, round, includeRefusers));
+    }
+
+    /** 收口校验：每人恰好一个去向、导师不超录 */
+    @GetMapping("/placement/verify")
+    public Result<Map<String, Object>> placementVerify(@RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(adminService.placementVerify(round));
+    }
+
+    /** 操作日志查询（分页 + 按动作筛选） */    @GetMapping("/logs")
     public Result<Map<String, Object>> logs(@RequestParam(defaultValue = "1") Integer page,
                                             @RequestParam(defaultValue = "20") Integer size,
                                             @RequestParam(required = false) String action) {

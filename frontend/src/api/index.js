@@ -88,6 +88,10 @@ export const openRound = (round) => http.post('/admin/rounds', { round })
 /** 手动结算：只有 1 个拟录取意向的学生自动确认，多个等学生自己选 */
 export const settleOffers = (round = 1) => http.post(`/admin/settle?round=${round}`)
 export const getDashboard = (round = 1) => http.get(`/admin/dashboard?round=${round}`)
+/** 收口安置：缺口 / 一键收口 / 校验 */
+export const getPlacementGaps = (round = 1) => http.get(`/admin/placement/gaps?round=${round}`)
+export const finalizePlacement = (round = 1, includeRefusers = true) => http.post(`/admin/placement/finalize?round=${round}&includeRefusers=${includeRefusers}`)
+export const verifyPlacement = (round = 1) => http.get(`/admin/placement/verify?round=${round}`)
 
 // ---------------- 公告 / 日志 ----------------
 

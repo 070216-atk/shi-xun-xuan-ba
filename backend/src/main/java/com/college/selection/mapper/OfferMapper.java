@@ -190,6 +190,35 @@ public interface OfferMapper {
             """)
     int releaseConfirmed(@Param("id") Long id);
 
+    /** 某学生本轮"待确认"的拟录取，按顺位排好（收口时挑第一顺位） */
+    @Select("""
+            SELECT * FROM offer
+             WHERE student_id = #{studentId} AND round_no = #{round}
+               AND type = 'ADMITTED' AND status = 'ISSUED'
+             ORDER BY COALESCE(rank_no, 9999), id
+            """)
+    List<Offer> findIssuedAdmitted(@Param("studentId") Long studentId, @Param("round") Integer round);
+
+    /** 收口时把该学生其他还没确认的拟录取作废（避免留下悬空的待确认） */
+    @Update("""
+            UPDATE offer SET status = 'EXPIRED'
+             WHERE student_id = #{studentId} AND round_no = #{round}
+               AND type = 'ADMITTED' AND status = 'ISSUED' AND id <> #{keepId}
+            """)
+    int expireOtherIssued(@Param("studentId") Long studentId,
+                          @Param("round") Integer round,
+                          @Param("keepId") Long keepId);
+
+    /** 收口时把该学生其他所有未确认的意向（含递补、调剂候选）一并作废 */
+    @Update("""
+            UPDATE offer SET status = 'EXPIRED'
+             WHERE student_id = #{studentId} AND round_no = #{round}
+               AND status = 'ISSUED' AND id <> #{keepId}
+            """)
+    int expireAllOther(@Param("studentId") Long studentId,
+                       @Param("round") Integer round,
+                       @Param("keepId") Long keepId);
+
     /** 该学生在本轮是否已经有这个导师的有效意向（拟录取/递补/调剂候选，未作废的） */
     @Select("""
             SELECT COUNT(*) FROM offer

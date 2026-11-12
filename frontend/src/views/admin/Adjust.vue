@@ -4,6 +4,39 @@
     <el-alert type="warning" :closable="false" style="margin-bottom:16px"
       title="调剂优先级不可颠倒：① 实训室内部调剂 → ② 全院跨实训室调剂（仅限服从者）→ ③ 约谈未服从调剂学生并统筹安置。后端会强制校验，跳级会返回错误。" />
 
+    <div class="card" style="border:2px solid #1b6e5a">
+      <div class="page-title">收口安置（确保每个人都有实训室）</div>
+      <p class="muted">
+        所有调剂做完后，点「一键收口」：有待确认拟录取的按顺位定案，没有的按「同室 → 跨室 → 经约谈统筹」依次落到有空位的导师。
+        收口校验不通过时不能发布公示。
+      </p>
+      <div class="gap-row" v-if="gaps">
+        <el-tag>已填报 {{ gaps.appliedCount }}</el-tag>
+        <el-tag type="success">已确认 {{ gaps.confirmedCount }}</el-tag>
+        <el-tag :type="gaps.unplacedCount ? 'danger' : 'info'">未安置 {{ gaps.unplacedCount }}</el-tag>
+        <el-tag type="warning">剩余名额 {{ gaps.totalRemaining }}</el-tag>
+        <el-tag :type="gaps.feasible ? 'success' : 'danger'">
+          {{ gaps.feasible ? '名额够用' : '名额不足！' }}
+        </el-tag>
+      </div>
+      <div v-if="gaps && gaps.unplaced.length" style="margin:8px 0">
+        <span class="muted">未安置：</span>
+        <el-tag v-for="u in gaps.unplaced" :key="u.studentId" type="danger" style="margin:4px">
+          {{ u.realName }}（{{ u.code }}）
+        </el-tag>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+        <el-button type="primary" :loading="finalizing" :disabled="!gaps || !gaps.unplacedCount" @click="doFinalize">
+          一键收口（{{ gaps ? gaps.unplacedCount : 0 }} 人）
+        </el-button>
+        <el-button :loading="checking" @click="doVerify">校验</el-button>
+        <el-button @click="refreshGaps">刷新缺口</el-button>
+      </div>
+      <el-alert v-if="verifyResult" :type="verifyResult.ok ? 'success' : 'error'" :closable="false" style="margin-top:10px"
+        :title="verifyResult.ok
+          ? `校验通过：${verifyResult.confirmedCount}/${verifyResult.appliedCount} 人都有唯一去向`
+          : `校验未通过：缺失 ${verifyResult.missing.length} 人、重复 ${verifyResult.duplicate.length} 人、超录 ${verifyResult.overQuota.length} 位导师`" />
+    </div>
     <div class="card">
       <div class="page-title">剩余名额（按导师）</div>
       <el-tag v-for="v in vacancies" :key="v.mentorId" :type="v.remaining > 0 ? 'warning' : 'info'" style="margin:4px">
@@ -108,9 +141,9 @@
 </template>
 
 <script setup>
-import { computed, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { store, loadAdmin, doAdjust } from '../../store'
+import { computed, ref, reactive, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { store, loadAdmin, doAdjust, loadPlacement, finalizePlacement, verifyPlacement } from '../../store'
 
 const vacancies = computed(() => (store.pool?.vacancies || []))
 const candidates = computed(() => (store.pool?.candidates || []))
@@ -139,8 +172,53 @@ async function assign(level, code, mentorId, conclusion) {
   }
 }
 
+const finalizing = ref(false)
+const checking = ref(false)
+const verifyResult = ref(null)
+const gaps = computed(() => store.placement)
+
+async function refreshGaps() {
+  try { await loadPlacement() } catch (e) { ElMessage.error(e.message || '刷新失败') }
+}
+
+async function doFinalize() {
+  try {
+    await ElMessageBox.confirm(
+      `确认收口？会把没着落的学生按「同室 → 跨室 → 经约谈统筹」依次安置，不服从调剂的人也会被安排。`,
+      '一键收口', { type: 'warning', confirmButtonText: '开始收口', cancelButtonText: '取消' }
+    )
+  } catch { return }
+  finalizing.value = true
+  try {
+    const r = await finalizePlacement(true)
+    verifyResult.value = r.verify
+    ElMessage.success(
+      `收口完成：同室 ${r.assignedInLab} 人、跨室 ${r.assignedCross} 人、强制 ${r.forced} 人，仍未安置 ${r.stillUnplacedCount} 人`
+    )
+  } catch (e) {
+    ElMessage.error(e.message || '收口失败')
+  } finally {
+    finalizing.value = false
+  }
+}
+
+async function doVerify() {
+  checking.value = true
+  try {
+    verifyResult.value = await verifyPlacement()
+    if (verifyResult.value.ok) ElMessage.success('校验通过')
+    else ElMessage.warning('校验未通过，请查看详情')
+  } catch (e) {
+    ElMessage.error(e.message || '校验失败')
+  } finally {
+    checking.value = false
+  }
+}
 function refresh() {
   loadAdmin().then(() => ElMessage.success('已刷新')).catch(e => ElMessage.error(e.message))
 }
-onMounted(() => loadAdmin().catch(e => ElMessage.error(e.message)))
+onMounted(() => {
+  loadAdmin().catch(e => ElMessage.error(e.message))
+  loadPlacement().catch(() => {})
+})
 </script>
