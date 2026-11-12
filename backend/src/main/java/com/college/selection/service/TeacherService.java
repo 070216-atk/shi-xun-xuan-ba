@@ -120,12 +120,17 @@ public class TeacherService {
      *   5. 重复提交 = 覆盖本导师本轮名单
      *   6. 首轮面试阶段不自动确认（等进入确认阶段统一结算）；
      *      分轮补录阶段没有再走"拟录取确认"环节，所以提交时就地确认只有 1 个意向的学生
+     *   7. 允许在「拟录取与学生确认」阶段补交/修正名单：
+     *      管理员切到阶段 5 之后，导师常常还要补录一两个人或改名单，
+     *      如果只允许阶段 4 提交，切到阶段 5 就会卡死（提示不在面试窗口内）。
+     *      此时提交按"已进入结算阶段"处理，只有 1 个意向的学生当场确认。
      */
     @Transactional
     public void saveLists(Long teacherId, Integer round, TeacherListsReq req) {
         SysUser t = requireTeacher(teacherId);
-        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_REFILL);
+        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_CONFIRM, STAGE_REFILL);
         boolean refill = stageService.isOpen(round, STAGE_REFILL);
+        boolean confirmStage = stageService.isOpen(round, STAGE_CONFIRM);
 
         List<Long> admitted = req.admitted == null ? Collections.emptyList() : req.admitted;
         List<Long> waitlist = req.waitlist == null ? Collections.emptyList() : req.waitlist;
@@ -190,7 +195,10 @@ public class TeacherService {
         // 分轮补录阶段没有再走"拟录取确认"环节，所以就地结算：
         // 只填了 1 个意向（不可能再收到第二份拟录取）并且已发 1 份的学生直接确认；
         // 填了多个意向的学生等所有导师提交完，在本阶段自己选。
-        if (refill) {
+        //
+        // 同理，如果当前已经处在「拟录取与学生确认」阶段（管理员切过来了），
+        // 说明结算时机已到，导师补交的名单也按同样规则当场确认。
+        if (refill || confirmStage) {
             for (Long sid : admitted) {
                 if (applicationMapper.countItems(sid, round) == 1
                         && offerMapper.countAdmittedIssued(sid, round) == 1) {

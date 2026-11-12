@@ -19,10 +19,10 @@
 
     <div v-if="offers.length" class="card">
       <div class="page-title">录取意向</div>
-      <el-alert v-if="pendingOffers.length > 1" type="warning" :closable="false" style="margin-bottom:12px"
+      <el-alert v-if="pendingAdmitted.length > 1" type="warning" :closable="false" style="margin-bottom:12px"
         title="你收到 2 个及以上拟录取意向，请在截止时间前自主选择唯一去向；逾期未确认视为放弃，名额按递补顺位补充。" />
-      <el-alert v-else-if="pendingOffers.length === 1 && offers.length === 1" type="success" :closable="false" style="margin-bottom:12px"
-        title="你仅收到 1 个拟录取意向，系统已自动确认。" />
+      <el-alert v-else-if="pendingAdmitted.length === 1" type="success" :closable="false" style="margin-bottom:12px"
+        title="你收到 1 个拟录取意向，进入「拟录取与学生确认」阶段后系统会自动确认；也可以直接点下方按钮确认。" />
 
       <div v-for="o in offers" :key="o.offerId || o.labId" class="offer-row">
         <div>
@@ -32,8 +32,10 @@
           <el-tag v-if="o.type === 'WAITLIST'" type="info" size="small" style="margin-left:4px">递补</el-tag>
           <el-tag v-if="o.type === 'ADJUST_CANDIDATE'" type="info" size="small" style="margin-left:4px">调剂候选</el-tag>
         </div>
-        <div v-if="o.status === 'pending' && o.type === 'ADMITTED' && pendingOffers.length > 1">
-          <el-button type="primary" size="small" :loading="confirming" @click="doConfirm(o)">选择该去向</el-button>
+        <div v-if="o.status === 'pending' && o.type === 'ADMITTED'">
+          <el-button type="primary" size="small" :loading="confirming" @click="doConfirm(o)">
+            {{ pendingAdmitted.length > 1 ? '选择该去向' : '确认该去向' }}
+          </el-button>
         </div>
       </div>
     </div>
@@ -71,19 +73,23 @@ const status = computed(() =>
 /** 后端状态文案在公示期间是"…公示中"，这里据此给状态加个醒目标记 */
 const inPublicity = computed(() => (status.value || '').includes('公示中'))
 const offers = computed(() => store.offers[store.user?.id] || [])
-const pendingOffers = computed(() => offers.value.filter(o => o.status === 'pending'))
+/** 待确认的拟录取（递补/调剂候选不算，它们不需要学生操作） */
+const pendingAdmitted = computed(() =>
+  offers.value.filter(o => o.status === 'pending' && o.type === 'ADMITTED'))
 const app = computed(() => store.applications[`${store.user?.id}:${store.round}`])
 const alreadyAdmitted = computed(() => ['ADMITTED', 'CONFIRMED'].includes(store.studentStatus?.status))
 
 const needAction = computed(() => {
   if (alreadyAdmitted.value) return false
   if (store.currentStage === 3 && !app.value) return true
-  if (pendingOffers.value.length > 1 && pendingOffers.value.some(o => o.type === 'ADMITTED')) return true
+  // 只要还有待确认的拟录取，就需要学生操作（1 个也要确认，不能只靠自动结算）
+  if (pendingAdmitted.value.length > 0) return true
   return false
 })
 const nextAction = computed(() => {
   if (store.currentStage === 3 && !app.value) return '尽快完成意向填报'
-  if (pendingOffers.value.length > 1) return '在拟录取意向中选择唯一去向'
+  if (pendingAdmitted.value.length > 1) return '在拟录取意向中选择唯一去向'
+  if (pendingAdmitted.value.length === 1) return '确认你的录取去向'
   return '等待学院通知'
 })
 
