@@ -207,6 +207,8 @@ public class TeacherService {
      *      管理员切到阶段 5 之后，导师常常还要补录一两个人或改名单，
      *      如果只允许阶段 4 提交，切到阶段 5 就会卡死（提示不在面试窗口内）。
      *      此时提交按"已进入结算阶段"处理，只有 1 个意向的学生当场确认。
+     *   8. 三份名单里的人必须本轮本室已完成面试评分，阶段 4/5/6 都一样，
+     *      避免补录阶段跳过面试直接录取。
      */
     @Transactional
     public void saveLists(Long teacherId, Integer round, TeacherListsReq req) {
@@ -278,18 +280,15 @@ public class TeacherService {
                             who(sid) + " 还没有进入本室面试名单，不能写入名单（请先在「报名学生」里拉进面试）");
                 }
             }
-            // 名单是"面试之后"才出的，没打分的人不能被写进任何一份名单
-            Map<Long, Double> scored = new LinkedHashMap<>();
-            for (ApplicantVO a : inviteMapper.findInterviewList(t.labId, round)) {
-                if (a.scoreTotal != null) {
-                    scored.put(a.studentId, a.scoreTotal);
-                }
-            }
-            for (Long sid : allStudents) {
-                if (!scored.containsKey(sid)) {
-                    throw new BizException(2007,
-                            who(sid) + " 还没有面试评分，请先在「面试评价」里打分，再写入名单");
-                }
+        }
+
+        // 名单是"面试之后"才出的：所有阶段（面试、拟录取确认、补录）都必须先打分，
+        // 否则补录阶段可以绕开面试直接把未评分的学生写进拟录取名单
+        List<Long> scored = teacherMapper.findScoredStudentIds(t.labId, round);
+        for (Long sid : allStudents) {
+            if (!scored.contains(sid)) {
+                throw new BizException(2007,
+                        who(sid) + " 还没有面试评分，请先在「面试评价」里打分，再写入名单");
             }
         }
 

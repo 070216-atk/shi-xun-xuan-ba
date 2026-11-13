@@ -2,7 +2,9 @@
   <div>
     <div class="page-title">
       意向填报
-      <el-tag v-if="store.round > 1" type="warning" style="margin-left:8px">第{{ store.round }}轮补录</el-tag>
+      <el-tag v-if="store.round > 1 || store.currentStage === 6" type="warning" style="margin-left:8px">
+        {{ store.round > 1 ? `第${store.round}轮` : '' }}补录
+      </el-tag>
     </div>
 
     <el-alert v-if="!windowOpen && !admitted" type="info" :closable="false" show-title
@@ -15,14 +17,16 @@
         :sub-title="`去向：${admitted.lab}。已被录取的同学不再参与后续轮次，无需再填报。`" />
       <template v-else>
         <el-alert type="warning" :closable="false" style="margin-bottom:16px"
-          title="填报规则：最多 3 个平行导师意向，不分先后；截止前可反复修改，截止后锁定不可修改。" />
+          :title="`填报规则：${maxItems === 1 ? '补录阶段只能填报 1 个导师意向' : '最多 3 个平行导师意向，不分先后'}；每轮只能提交一次，提交后不可修改。`" />
+        <el-alert v-if="locked" type="success" :closable="false" style="margin-bottom:16px"
+          title="本轮意向已提交，内容不可修改。" />
         <div v-if="windowOpen && store.stageDeadline" style="margin-bottom:16px">
           距离截止：<span class="deadline">{{ countdown }}</span>
         </div>
 
         <el-form label-position="top">
-          <el-form-item v-for="i in 3" :key="i" :label="`平行意向 ${i}${i > 1 ? '（可不填）' : ''}`">
-            <el-select v-model="selected[i - 1]" :disabled="!windowOpen" clearable
+          <el-form-item v-for="i in maxItems" :key="i" :label="`平行意向 ${i}${maxItems > 1 && i > 1 ? '（可不填）' : ''}`">
+            <el-select v-model="selected[i - 1]" :disabled="!windowOpen || locked" clearable
               placeholder="选择实训室 / 导师" style="width:100%">
               <el-option-group v-for="lab in labs" :key="lab.id" :label="lab.name">
                 <el-option v-for="m in lab.mentors" :key="m.id" :value="`${lab.id}:${m.id}`"
@@ -33,13 +37,13 @@
           </el-form-item>
 
           <el-form-item label="调剂意愿（两项独立选择）">
-            <div><el-checkbox v-model="obeyInner" :disabled="!windowOpen">服从实训室内部调剂</el-checkbox></div>
-            <div><el-checkbox v-model="obeyCross" :disabled="!windowOpen">服从全院跨实训室调剂</el-checkbox></div>
+            <div><el-checkbox v-model="obeyInner" :disabled="!windowOpen || locked">服从实训室内部调剂</el-checkbox></div>
+            <div><el-checkbox v-model="obeyCross" :disabled="!windowOpen || locked">服从全院跨实训室调剂</el-checkbox></div>
           </el-form-item>
 
-          <el-button type="primary" size="large" :disabled="!windowOpen" :loading="saving"
+          <el-button type="primary" size="large" :disabled="!windowOpen || locked" :loading="saving"
             style="width:100%" @click="onSubmit">
-            {{ existing ? '修改并提交' : '提交意向' }}
+            {{ locked ? '已提交，不可修改' : '提交意向' }}
           </el-button>
         </el-form>
       </template>
@@ -66,7 +70,11 @@ import { labs, stages, store, loadStudent, submitApplication, labById } from '..
 const saving = ref(false)
 const key = computed(() => `${store.user?.id}:${store.round}`)
 const existing = computed(() => store.applications[key.value])
+/** 每轮只能提交一次，已提交后表单锁定 */
+const locked = computed(() => !!existing.value)
 const windowOpen = computed(() => store.currentStage === 3 || store.currentStage === 6)
+/** 补录阶段只允许报 1 个导师，正常意向填报阶段最多 3 个 */
+const maxItems = computed(() => store.currentStage === 6 ? 1 : 3)
 const currentStageName = computed(() => stages.find(s => s.id === store.currentStage)?.name || '非填报期')
 
 /** 已被录取（含前几轮）：录取是终局状态，后续轮次不能再填报 */
@@ -111,10 +119,11 @@ onMounted(() => {
 })
 
 async function onSubmit() {
+  if (locked.value) return ElMessage.warning('本轮意向已提交，不能重复提交或修改')
   if (admitted.value) {
     return ElMessage.warning(`你已在第 ${admitted.value.round} 轮被录取，不能再填报意向`)
   }
-  const keys = selected.value.filter(Boolean)
+  const keys = selected.value.slice(0, maxItems.value).filter(Boolean)
   if (!keys.length) return ElMessage.warning('请至少填报 1 个意向')
   if (new Set(keys).size !== keys.length) return ElMessage.warning('意向不能重复')
 

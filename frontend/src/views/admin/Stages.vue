@@ -2,7 +2,7 @@
   <div>
     <div class="page-title">流程配置</div>
     <el-alert type="info" :closable="false" style="margin-bottom:16px"
-      title="时间窗以服务器时间为准。「切换到该阶段」会把该阶段设成现在开始、4 小时后结束，用于演示。" />
+      title="时间窗以服务器时间为准。「切换到该阶段」会把该阶段设成现在开始、4 小时后结束，并自动关闭本轮其他阶段；同一时间只允许一个阶段开放。" />
     <el-alert v-if="!roundOpen" type="warning" :closable="false" style="margin-bottom:16px"
       :title="`第 ${store.round} 轮已结束，只能查看；要调阶段请先在右上角切到进行中的轮次。`" />
     <div class="card">
@@ -14,14 +14,16 @@
           <template #default="{ row }">
             <el-tag v-if="row.current" type="success">当前阶段</el-tag>
             <el-tag v-else-if="row.open" type="warning">开放中</el-tag>
+            <el-tag v-else-if="isEnded(row)" type="info">已结束</el-tag>
             <el-tag v-else type="info">未开放</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="!row.open" size="small" type="primary" plain :disabled="!roundOpen"
+            <span v-if="row.current" class="muted">进行中</span>
+            <span v-else-if="isEnded(row)" class="muted">已结束</span>
+            <el-button v-else size="small" type="primary" plain :disabled="!roundOpen"
               @click="switchTo(row)">切换到该阶段</el-button>
-            <span v-else class="muted">进行中</span>
           </template>
         </el-table-column>
       </el-table>
@@ -40,6 +42,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { stages, store, loadPublic, switchStage } from '../../store'
 
 const roundOpen = computed(() => store.rounds.find(r => r.roundNo === store.round)?.status === 'OPEN')
+
+/** 当前阶段序号；没有进行中的阶段时为 null */
+const currentNo = computed(() => stages.find(s => s.current)?.id ?? null)
+
+/** 有当前阶段时按流程位置判断，避免"切换阶段"把后面的阶段也压成过去后误显示已结束 */
+function isEnded(row) {
+  if (currentNo.value != null) return row.id < currentNo.value
+  return row.remaining === 0
+}
 
 async function switchTo(row) {
   try {

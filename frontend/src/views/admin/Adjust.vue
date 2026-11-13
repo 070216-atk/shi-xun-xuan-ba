@@ -8,10 +8,13 @@
       <div class="page-title">收口安置（确保每个人都有实训室）</div>
       <p class="muted">
         所有调剂做完后，点「一键收口」：有待确认拟录取的按顺位定案，没有的按「同室 → 跨室 → 经约谈统筹」依次落到有空位的导师。
+        最后一轮补录结束后，所有还没有去向的学生（包括从未报名、只在往轮报过名的）都会进入下面的未安置名单，可单独「指定安置」或跟着「一键收口」一起兜底安置。
         收口校验不通过时不能发布公示。
       </p>
       <div class="gap-row" v-if="gaps">
         <el-tag>已填报 {{ gaps.appliedCount }}</el-tag>
+        <el-tag v-if="gaps.neverAppliedCount" type="info">从未报名 {{ gaps.neverAppliedCount }}</el-tag>
+        <el-tag v-if="gaps.earlierOnlyCount" type="warning">仅往轮报名 {{ gaps.earlierOnlyCount }}</el-tag>
         <el-tag type="success">已确认 {{ gaps.confirmedCount }}</el-tag>
         <el-tag :type="gaps.unplacedCount ? 'danger' : 'info'">未安置 {{ gaps.unplacedCount }}</el-tag>
         <el-tag type="warning">剩余名额 {{ gaps.totalRemaining }}</el-tag>
@@ -21,8 +24,8 @@
       </div>
       <div v-if="gaps && gaps.unplaced.length" style="margin:8px 0">
         <span class="muted">未安置：</span>
-        <el-tag v-for="u in gaps.unplaced" :key="u.studentId" type="danger" style="margin:4px">
-          {{ u.realName }}（{{ u.code }}）
+        <el-tag v-for="u in gaps.unplaced" :key="u.studentId" :type="sourceTag(u.source)" style="margin:4px">
+          {{ u.realName }}（{{ u.code }}）{{ sourceLabel(u.source) }}
         </el-tag>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
@@ -37,7 +40,7 @@
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <el-select v-model="assignStudent" placeholder="选学生" style="width:180px" filterable>
             <el-option v-for="u in gaps.unplaced" :key="u.studentId" :value="u.studentId"
-              :label="`${u.realName}（${u.code}）`" />
+              :label="`${u.realName}（${u.code}）${sourceLabel(u.source)}`" />
           </el-select>
           <el-select v-model="assignMentor" placeholder="选导师" style="width:200px" filterable>
             <el-option v-for="m in gaps.availableMentors" :key="m.mentorId" :value="m.mentorId"
@@ -165,6 +168,10 @@ import { store, loadAdmin, doAdjust, loadPlacement, finalizePlacement, verifyPla
 
 const vacancies = computed(() => (store.pool?.vacancies || []))
 const candidates = computed(() => (store.pool?.candidates || []))
+
+/** 未安置学生的来源：本轮未录取 / 从未报名 / 仅往轮报名未录取 */
+const sourceLabel = (s) => ({ NEVER: ' · 未报名', EARLIER: ' · 往轮未录' }[s] || '')
+const sourceTag = (s) => ({ NEVER: 'info', EARLIER: 'warning' }[s] || 'danger')
 
 const p1Rows = computed(() => candidates.value.filter(c => c.adjustInLab))
 const p2Rows = computed(() => candidates.value.filter(c => !c.adjustInLab && c.adjustCross))

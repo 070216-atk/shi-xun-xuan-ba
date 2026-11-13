@@ -8,7 +8,9 @@
     <el-alert v-if="!canSubmit" type="info" :closable="false" style="margin-bottom:16px"
       title="名单只能在「导师初选与面试考核」「拟录取与学生确认」或「分轮补录」阶段提交；现在不在开放时间内，可以先看名单，等阶段切换后再提交。" />
     <el-alert type="warning" :closable="false" style="margin-bottom:16px"
-      :title="`拟录取不得超过你个人的名额（${quota} 人）；递补按顺位排序，用于放弃后的自动递补；内部调剂候选用于统筹调剂第一优先级。`" />
+      :title="`拟录取不得超过你个人的名额（${quota} 人）；递补按顺位排序，用于放弃后的自动递补；内部调剂候选用于统筹调剂第一优先级。三份名单都只能从已完成面试评分的学生中选择。`" />
+    <el-alert v-if="canSubmit && !candidates.length" type="info" :closable="false" style="margin-bottom:16px"
+      title="本室本轮还没有已评分的学生：请先到「报名学生」把学生拉进面试名单，再到「面试评价」打分，评分后才能写入名单。" />
 
     <el-row :gutter="16">
       <el-col :xs="24" :md="8">
@@ -134,13 +136,11 @@ const saving = ref(false)
 const canSubmit = computed(() => [4, 5, 6].includes(store.currentStage))
 
 const interviewed = computed(() =>
-  (store.applicants || []).filter(r => r.scoreAttitude != null)
+  (store.applicants || []).filter(r => r.scoreTotal != null)
 )
 
-// 补录/确认阶段允许直接录取尚未评分的报名学生，否则新轮次一个都选不了
-const candidates = computed(() =>
-  [5, 6].includes(store.currentStage) ? (store.applicants || []) : interviewed.value
-)
+// 三份名单都只能从已完成面试评分的学生里选（补录阶段也一样，不能跳过面试）
+const candidates = interviewed
 
 // 已经确认了本导师的学生（可以撤销）
 const confirmed = computed(() => {

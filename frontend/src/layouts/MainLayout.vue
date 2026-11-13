@@ -13,7 +13,7 @@
                 :label="`第 ${r.roundNo} 轮 · ${roundText(r.status)}`" />
             </el-select>
             <el-badge :is-dot="unread > 0" class="bell">
-              <el-button size="small" text style="color:#fff" @click="showNotif = true">通知</el-button>
+              <el-button size="small" text style="color:#fff" @click="openNotif">通知</el-button>
             </el-badge>
             <span class="uname">{{ store.user.name }}（{{ roleName }}）</span>
             <el-button size="small" @click="onLogout">退出</el-button>
@@ -51,6 +51,11 @@ const router = useRouter()
 const route = useRoute()
 const showNotif = ref(false)
 const unread = computed(() => store.notifications.filter(n => !n.read).length)
+
+function openNotif() {
+  showNotif.value = true
+  store.notifications.forEach(n => { n.read = true })
+}
 const roleName = computed(() => ({ student: '学生', teacher: '导师', admin: '学院管理员' }[store.user?.role] || ''))
 const roundText = (s) => ({ OPEN: '进行中', CLOSED: '已结束', PLANNING: '未开启' }[s] || s)
 

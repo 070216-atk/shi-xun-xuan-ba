@@ -47,6 +47,14 @@ public interface TeacherMapper {
             """)
     List<ApplicantVO> findApplicants(@Param("labId") Long labId, @Param("round") Integer round);
 
+    /** 本轮本室已完成面试评分的学生（名单只能从这些人里出） */
+    @Select("""
+            SELECT student_id
+              FROM interview_score
+             WHERE lab_id = #{labId} AND round_no = #{round}
+            """)
+    List<Long> findScoredStudentIds(@Param("labId") Long labId, @Param("round") Integer round);
+
     /** 该学生是否报了本室（防止给别的室的学生打分） */
     @Select("""
             SELECT COUNT(*)

@@ -101,6 +101,21 @@ public interface AdminMapper {
     @Select("SELECT * FROM stage WHERE round_no = #{round} ORDER BY stage_no")
     List<Stage> allStages(@Param("round") Integer round);
 
+    @Select("SELECT * FROM stage WHERE id = #{id}")
+    Stage stageById(@Param("id") Long id);
+
+    /** 同轮次里与给定时间窗重叠的其他阶段（用于保证同一时间只有一个阶段开放） */
+    @Select("""
+            SELECT * FROM stage
+             WHERE round_no = #{round} AND id <> #{excludeId}
+               AND start_at < #{endAt} AND end_at > #{startAt}
+             ORDER BY stage_no
+            """)
+    List<Stage> overlappingStages(@Param("round") Integer round,
+                                  @Param("excludeId") Long excludeId,
+                                  @Param("startAt") LocalDateTime startAt,
+                                  @Param("endAt") LocalDateTime endAt);
+
     @Update("UPDATE stage SET start_at = #{startAt}, end_at = #{endAt} WHERE id = #{id}")
     int updateStage(@Param("id") Long id,
                     @Param("startAt") LocalDateTime startAt,
@@ -232,6 +247,31 @@ public interface AdminMapper {
              WHERE round_no = #{round} AND status = 'CONFIRMED'
             """)
     java.util.List<Long> confirmedStudentIds(@Param("round") Integer round);
+
+    /**
+     * 所有还没有确认去向的学生（任何轮次都没有 CONFIRMED）。
+     * 补录全部结束后，这些人不管是没报过名还是只在往轮报过名，都要由管理员统筹安置。
+     * applicationCount = 0 表示从头到尾没报过名。
+     */
+    @Select("""
+            SELECT u.id AS studentId,
+                   (SELECT COUNT(*) FROM application a WHERE a.student_id = u.id) AS applicationCount
+              FROM sys_user u
+             WHERE u.role = 'STUDENT' AND u.status = 1
+               AND NOT EXISTS (SELECT 1 FROM offer o
+                                WHERE o.student_id = u.id AND o.status = 'CONFIRMED')
+             ORDER BY u.code
+            """)
+    java.util.List<java.util.Map<String, Object>> studentsWithoutPlacement();
+
+    /** 该学生是否还没有任何确认去向（安置前的兜底校验） */
+    @Select("""
+            SELECT COUNT(*) FROM sys_user u
+             WHERE u.id = #{studentId} AND u.role = 'STUDENT' AND u.status = 1
+               AND NOT EXISTS (SELECT 1 FROM offer o
+                                WHERE o.student_id = u.id AND o.status = 'CONFIRMED')
+            """)
+    int countUnplacedStudent(@Param("studentId") Long studentId);
 
     /** 每个导师的容量：名额 / 已确认（remaining 由 service 算） */
     @Select("""

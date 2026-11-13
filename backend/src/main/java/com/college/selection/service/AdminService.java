@@ -28,6 +28,8 @@ public class AdminService {
 
     /** 统筹调剂对应流程图第 7 个环节 */
     private static final int STAGE_ADJUST = 7;
+    /** 分轮补录对应第 6 个环节（补录轮开启后直接进入报名） */
+    private static final int STAGE_REFILL = 6;
     /** 拟录取与学生确认对应第 5 个环节 */
     private static final int STAGE_CONFIRM = 5;
 
@@ -199,7 +201,8 @@ public class AdminService {
     // ---------------- 阶段 ----------------
 
     public List<Stage> stages(Integer round) {
-        return adminMapper.allStages(round);
+        // 必须走 StageService 才能算出 open / isCurrent，否则管理端所有阶段都显示"未开放"
+        return stageService.list(round);
     }
 
     public void updateStage(Long adminId, Long stageId, LocalDateTime startAt, LocalDateTime endAt) {
@@ -209,6 +212,20 @@ public class AdminService {
         }
         if (!endAt.isAfter(startAt)) {
             throw new BizException(2009, "结束时间必须晚于开始时间");
+        }
+        Stage target = adminMapper.stageById(stageId);
+        if (target == null) {
+            throw new BizException(2009, "阶段不存在");
+        }
+        // 同一时间只允许一个阶段开放，避免学生端/导师端对"当前阶段"判断不一致
+        List<Stage> conflicts = adminMapper.overlappingStages(target.roundNo, stageId, startAt, endAt);
+        if (!conflicts.isEmpty()) {
+            StringBuilder names = new StringBuilder();
+            for (Stage s : conflicts) {
+                if (names.length() > 0) names.append("、");
+                names.append("「").append(s.name).append("」");
+            }
+            throw new BizException(2009, "该时间与" + names + "重叠；同一时间只能开放一个阶段");
         }
         adminMapper.updateStage(stageId, startAt, endAt);
     }
@@ -224,6 +241,15 @@ public class AdminService {
         requireAdmin(adminId);
         if (stageNo == null) {
             throw new BizException(2009, "必须指定要切换到的阶段");
+        }
+        // 已经走过的阶段不允许切回，避免把已产生的数据推回更早的环节
+        Stage current = stageService.current(round);
+        if (current != null && stageNo < current.stageNo) {
+            String name = "该阶段";
+            for (Stage s : stageService.list(round)) {
+                if (stageNo.equals(s.stageNo)) { name = "「" + s.name + "」"; break; }
+            }
+            throw new BizException(2009, name + "已结束，不能切回");
         }
         int h = (hours == null || hours < 1) ? 4 : hours;
         LocalDateTime now = LocalDateTime.now();
@@ -371,6 +397,11 @@ public class AdminService {
             adminMapper.copyStages(round, round - 1);
         }
         adminMapper.openRound(round);
+        // 补录轮的核心就是让学生重新报名：直接打开「分轮补录」窗口，
+        // 否则复制过来的阶段时间窗都是上一轮的过去时间，学生端无法填报
+        LocalDateTime now = LocalDateTime.now();
+        adminMapper.closeAllStages(round, now);
+        adminMapper.openStage(round, STAGE_REFILL, now.minusHours(1), now.plusHours(4));
     }
 
     // ---------------- 公示异议 ----------------
@@ -498,7 +529,13 @@ public class AdminService {
             throw new BizException(2007, "必须填写安置原因（例如约谈结论），否则学生看不到为什么被安排到这里");
         }
         if (!adminMapper.appliedStudentIds(round).contains(studentId)) {
-            throw new BizException(2007, "该学生本轮没有填报，不在安置范围内");
+            // 补录全部结束后，没报过名 / 只在往轮报过名的未录取学生也允许管理员统筹安置
+            if (!registrationClosed(round)) {
+                throw new BizException(2007, "该学生本轮没有填报，且报名通道还没关闭，暂不能统筹安置");
+            }
+            if (adminMapper.countUnplacedStudent(studentId) == 0) {
+                throw new BizException(2007, "该学生已经有确认去向，不能重复安置");
+            }
         }
 
         Mentor m = mentorMapper.findById(mentorId);
@@ -611,14 +648,26 @@ public class AdminService {
         for (int v : left.values()) totalLeft += v;
 
         List<Map<String, Object>> unplaced = new ArrayList<>();
+        java.util.Set<Long> listed = new java.util.HashSet<>();
+        int appliedUnplaced = 0;
         for (Long sid : applied) {
             if (confirmed.contains(sid)) continue;
-            Map<String, Object> s = info.get(sid);
-            Map<String, Object> u = new LinkedHashMap<>();
-            u.put("studentId", sid);
-            u.put("code", s == null ? null : s.get("code"));
-            u.put("realName", s == null ? null : s.get("realName"));
-            unplaced.add(u);
+            unplaced.add(unplacedItem(info, sid, "ROUND"));
+            listed.add(sid);
+            appliedUnplaced++;
+        }
+
+        // 最后一轮的报名通道彻底关闭后，所有还没着落的学生都进入统筹安置：
+        // 从头没报过名的（NEVER）和只在往轮报过名、一直没录取的（EARLIER）
+        int neverApplied = 0, earlierOnly = 0;
+        if (registrationClosed(round)) {
+            for (Map<String, Object> s : adminMapper.studentsWithoutPlacement()) {
+                long sid = ((Number) s.get("studentId")).longValue();
+                if (listed.contains(sid)) continue;
+                boolean never = ((Number) s.get("applicationCount")).intValue() == 0;
+                unplaced.add(unplacedItem(info, sid, never ? "NEVER" : "EARLIER"));
+                if (never) neverApplied++; else earlierOnly++;
+            }
         }
 
         List<Map<String, Object>> available = new ArrayList<>();
@@ -639,8 +688,10 @@ public class AdminService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("round", round);
         m.put("appliedCount", applied.size());
-        m.put("confirmedCount", applied.size() - unplaced.size());
+        m.put("confirmedCount", applied.size() - appliedUnplaced);
         m.put("unplacedCount", unplaced.size());
+        m.put("neverAppliedCount", neverApplied);
+        m.put("earlierOnlyCount", earlierOnly);
         m.put("totalRemaining", totalLeft);
         m.put("feasible", totalLeft >= unplaced.size());
         int lastRound = adminMapper.lastActiveRound();
@@ -649,6 +700,27 @@ public class AdminService {
         m.put("availableMentors", available);
         m.put("unplaced", unplaced);
         return m;
+    }
+
+    private Map<String, Object> unplacedItem(Map<Long, Map<String, Object>> info, Long sid,
+                                             String source) {
+        Map<String, Object> s = info.get(sid);
+        Map<String, Object> u = new LinkedHashMap<>();
+        u.put("studentId", sid);
+        u.put("code", s == null ? null : s.get("code"));
+        u.put("realName", s == null ? null : s.get("realName"));
+        u.put("source", source);
+        return u;
+    }
+
+    /**
+     * 报名通道是否已经彻底关闭。
+     * 只认最后一轮，且该轮补录窗口已经结束；否则管理员可能把还能报名的学生提前分配走。
+     */
+    private boolean registrationClosed(Integer round) {
+        if (round < adminMapper.lastActiveRound()) return false;
+        LocalDateTime refillEnd = stageService.getEndAt(round, STAGE_REFILL);
+        return refillEnd == null || !refillEnd.isAfter(LocalDateTime.now());
     }
 
     /**
@@ -687,11 +759,18 @@ public class AdminService {
         List<Long> applied = adminMapper.appliedStudentIds(round);
         // 后面轮次已经录取的人不算本轮缺口，避免重复安置
         java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedFromRoundOn(round));
+        // 最后一轮报名结束后，所有还没着落的学生都纳入（去重，避免和本轮已填报的人重复处理）
+        java.util.Set<Long> toPlace = new java.util.LinkedHashSet<>(applied);
+        if (registrationClosed(round)) {
+            for (Map<String, Object> s : adminMapper.studentsWithoutPlacement()) {
+                toPlace.add(((Number) s.get("studentId")).longValue());
+            }
+        }
 
         int settledSingle = 0, settledMulti = 0, inLab = 0, cross = 0, forced = 0;
         List<Long> stillUnplaced = new ArrayList<>();
 
-        for (Long sid : applied) {
+        for (Long sid : toPlace) {
             if (confirmed.contains(sid)) continue;
 
             List<Offer> issued = offerMapper.findIssuedAdmitted(sid, round);
