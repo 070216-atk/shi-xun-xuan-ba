@@ -191,6 +191,20 @@ INSERT INTO notice (title, content, publisher_id, is_top, status) VALUES
  (SELECT id FROM sys_user WHERE username = 'admin'), 0, 1);
 
 -- ------------------------------------------------------------
+-- 【演示友好】导入后默认从「1 集中宣讲」开始
+-- 上面写的是真实日程（11/02–11/08），导入时基本都过了；
+-- 不处理的话一个阶段都不开放，学生会以为系统坏了。
+-- 这里把阶段 1 设成"现在开始、4 小时"，其余全部压成过去，
+-- 之后由管理员在「流程配置」里依次往后切（可以来回切，只改时间窗不删数据）。
+-- ------------------------------------------------------------
+UPDATE stage SET start_at = DATE_SUB(NOW(), INTERVAL 3 DAY),
+                 end_at   = DATE_SUB(NOW(), INTERVAL 2 DAY)
+ WHERE round_no = 1;
+
+UPDATE stage SET start_at = DATE_SUB(NOW(), INTERVAL 10 MINUTE),
+                 end_at   = DATE_ADD(NOW(), INTERVAL 4 HOUR)
+ WHERE round_no = 1 AND stage_no = 1;
+-- ------------------------------------------------------------
 -- 导入后必跑：名额一致性校验（每个室都应显示 OK）
 -- ------------------------------------------------------------
 SELECT l.code,
