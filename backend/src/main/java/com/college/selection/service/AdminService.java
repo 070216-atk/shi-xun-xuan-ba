@@ -242,15 +242,8 @@ public class AdminService {
         if (stageNo == null) {
             throw new BizException(2009, "必须指定要切换到的阶段");
         }
-        // 已经走过的阶段不允许切回，避免把已产生的数据推回更早的环节
-        Stage current = stageService.current(round);
-        if (current != null && stageNo < current.stageNo) {
-            String name = "该阶段";
-            for (Stage s : stageService.list(round)) {
-                if (stageNo.equals(s.stageNo)) { name = "「" + s.name + "」"; break; }
-            }
-            throw new BizException(2009, name + "已结束，不能切回");
-        }
+        // 允许自由切换（含切回更早的阶段）：演示、纠错、重跑流程都需要。
+        // 切阶段只改时间窗，不会删除任何已产生的数据；下游操作各自有状态校验兜底。
         int h = (hours == null || hours < 1) ? 4 : hours;
         LocalDateTime now = LocalDateTime.now();
         adminMapper.closeAllStages(round, now);

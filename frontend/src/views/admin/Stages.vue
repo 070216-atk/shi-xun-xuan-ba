@@ -2,7 +2,7 @@
   <div>
     <div class="page-title">流程配置</div>
     <el-alert type="info" :closable="false" style="margin-bottom:16px"
-      title="时间窗以服务器时间为准。「切换到该阶段」会把该阶段设成现在开始、4 小时后结束，并自动关闭本轮其他阶段；同一时间只允许一个阶段开放。" />
+      title="时间窗以服务器时间为准。「切换到该阶段」会把该阶段设成现在开始、4 小时后结束，并自动关闭本轮其他阶段。可以自由切换，包括切回更早的阶段（只改时间窗，不删除任何已产生的数据）。" />
     <el-alert v-if="!roundOpen" type="warning" :closable="false" style="margin-bottom:16px"
       :title="`第 ${store.round} 轮已结束，只能查看；要调阶段请先在右上角切到进行中的轮次。`" />
     <div class="card">
@@ -21,7 +21,6 @@
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <span v-if="row.current" class="muted">进行中</span>
-            <span v-else-if="isEnded(row)" class="muted">已结束</span>
             <el-button v-else size="small" type="primary" plain :disabled="!roundOpen"
               @click="switchTo(row)">切换到该阶段</el-button>
           </template>
