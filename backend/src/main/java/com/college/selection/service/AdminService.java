@@ -863,6 +863,7 @@ public class AdminService {
         Map<Long, Map<String, Object>> info = studentInfo();
 
         List<Map<String, Object>> missing = new ArrayList<>();
+        java.util.Set<Long> listed = new java.util.HashSet<>();
         for (Long sid : applied) {
             if (confirmed.contains(sid)) continue;
             Map<String, Object> s = info.get(sid);
@@ -872,6 +873,23 @@ public class AdminService {
             u.put("realName", s == null ? null : s.get("realName"));
             u.put("problem", "没有确认去向");
             missing.add(u);
+            listed.add(sid);
+        }
+
+        // 报名通道关闭后，"从未报名"和"只在往轮报过名"的未安置学生也算缺口，
+        // 否则会和「收口缺口」对不上，出现"还有 12 人没着落却能公示"的情况
+        if (registrationClosed(round)) {
+            for (Map<String, Object> s : adminMapper.studentsWithoutPlacement()) {
+                long sid = ((Number) s.get("studentId")).longValue();
+                if (listed.contains(sid)) continue;
+                boolean never = ((Number) s.get("applicationCount")).intValue() == 0;
+                Map<String, Object> u = new LinkedHashMap<>();
+                u.put("studentId", sid);
+                u.put("code", s.get("code"));
+                u.put("realName", s.get("realName"));
+                u.put("problem", never ? "从未报名，尚未统筹" : "往轮未录取，尚未统筹");
+                missing.add(u);
+            }
         }
 
         List<Map<String, Object>> multi = new ArrayList<>();
@@ -910,7 +928,8 @@ public class AdminService {
         m.put("finalRound", finalRound);
         m.put("lastRound", lastRound);
         m.put("appliedCount", applied.size());
-        m.put("confirmedCount", applied.size() - missing.size());
+        // 已确认 = 本轮及之后任意轮次有 CONFIRMED 的学生总数（含被统筹安置的非报名者）
+        m.put("confirmedCount", adminMapper.confirmedFromRoundOn(round).size());
         m.put("missing", missing);
         m.put("duplicate", multi);
         m.put("overQuota", over);
