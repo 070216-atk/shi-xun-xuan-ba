@@ -31,7 +31,7 @@ public class JwtUtil {
         if (secret == null || secret.isBlank() || secret.length() < 32) {
             throw new IllegalStateException(
                     "selection.jwt.secret 未配置或少于 32 个字符。\n"
-                  + "请在 backend/src/main/resources/application-local.yml 里填一段至少 32 位的随机字符串。\n"
+                  + "请在 backend/application-local.yml 里填一段至少 32 位的随机字符串。\n"
                   + "生成方法（PowerShell）：\n"
                   + "  -join ((1..48) | ForEach-Object { [char](Get-Random -InputObject (48..57 + 65..90 + 97..122)) })");
         }

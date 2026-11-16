@@ -12,8 +12,13 @@ spring:
   # 加 optional: 前缀表示"没有这个文件也能启动"，
   # 这样室友没配时是先报连不上数据库，而不是直接启动失败。
   # ------------------------------------------------------------
+  # 解析顺序：先读「运行目录」下的 application-local.yml（开发时是 backend/，
+  # 发布后是 jar 同目录），再兼容老布局 classpath。这样本机的数据库密码 /
+  # JWT 密钥不会被打进 jar（构建产物里不含它）。
   config:
-    import: optional:classpath:application-local.yml
+    import:
+      - optional:file:./application-local.yml
+      - optional:classpath:application-local.yml
 
   datasource:
     # 库名必须是 lab_selection（见 framework/3.database/schema.sql）

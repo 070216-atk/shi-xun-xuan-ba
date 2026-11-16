@@ -1,4 +1,4 @@
-﻿<#
+<#
     打发布包：把前端构建产物塞进后端 jar，输出「一个 jar 就是整个系统」。
     
     产物：
@@ -67,9 +67,10 @@ Copy-Item -Path (Join-Path $dist '*') -Destination $staticDir -Recurse -Force
 Write-Host '[3/5] 打包后端...' -ForegroundColor Yellow
 # application-local.yml 里是本机的数据库密码 / JWT 密钥，绝不能打进发布包。
 # mvn clean 会清空 target，所以备份放在项目根目录，打完再挪回去。
-$localYml = Join-Path $backend 'src\main\resources\application-local.yml'
+$localYml = Join-Path $backend 'application-local.yml'
+if (-not (Test-Path $localYml)) { $localYml = Join-Path $backend 'src\main\resources\application-local.yml' }
 $localBak = Join-Path $root '.application-local.yml.bak'
-$hasLocal = Test-Path $localYml
+$hasLocal = (Test-Path $localYml) -and ($localYml -like '*src\main\resources\*')
 if ($hasLocal) {
     Write-Host '      暂时移出 application-local.yml（避免本地密码进 jar）' -ForegroundColor DarkGray
     Move-Item -LiteralPath $localYml -Destination $localBak -Force
@@ -93,6 +94,9 @@ if (-not $jar) { throw '找不到打出来的 jar' }
 Write-Host '[4/5] 输出到 deploy\ ...' -ForegroundColor Yellow
 if (-not (Test-Path $deploy)) { New-Item -ItemType Directory -Path $deploy -Force | Out-Null }
 Copy-Item -LiteralPath $jar.FullName -Destination (Join-Path $deploy '选拔系统.jar') -Force
+# 本机配置不进 jar，但发布包里要带一份，双击启动时从 jar 同目录读取
+$cfgSrc = Join-Path $backend 'application-local.yml'
+if (Test-Path $cfgSrc) { Copy-Item -LiteralPath $cfgSrc -Destination (Join-Path $deploy 'application-local.yml') -Force }
 
 $cmd = @'
 @echo off

@@ -2,8 +2,11 @@ package com.college.selection.service;
 
 import com.college.selection.common.BizException;
 import com.college.selection.common.ErrorCode;
+import com.college.selection.entity.Mentor;
 import com.college.selection.entity.Offer;
 import com.college.selection.mapper.AdminMapper;
+import com.college.selection.mapper.MentorMapper;
+import com.college.selection.mapper.NotificationMapper;
 import com.college.selection.mapper.OfferMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,11 +29,16 @@ public class OfferService {
     private final OfferMapper offerMapper;
     private final StageService stageService;
     private final AdminMapper adminMapper;
+    private final MentorMapper mentorMapper;
+    private final NotificationMapper notificationMapper;
 
-    public OfferService(OfferMapper offerMapper, StageService stageService, AdminMapper adminMapper) {
+    public OfferService(OfferMapper offerMapper, StageService stageService, AdminMapper adminMapper,
+                        MentorMapper mentorMapper, NotificationMapper notificationMapper) {
         this.offerMapper = offerMapper;
         this.stageService = stageService;
         this.adminMapper = adminMapper;
+        this.mentorMapper = mentorMapper;
+        this.notificationMapper = notificationMapper;
     }
 
     /** 一旦公示发布或结束，去向就锁定了，学生不能再确认/撤销 */
@@ -162,6 +170,12 @@ public class OfferService {
         offerMapper.promoteToAdmitted(next.id,
                 offerMapper.maxAdmittedRank(mentorId, round) + 1,
                 stageService.getEndAt(round, STAGE_CONFIRM));
+        // 递补上位要通知学生（流程文档要求"名额释放后递补第一名收到通知被录取"）。
+        // 之前这里漏了：学生状态变了但收不到任何消息。
+        Mentor m = mentorMapper.findById(mentorId);
+        notificationMapper.insert(next.studentId, "OFFER", "递补成功",
+                (m == null ? "导师" : m.name + " 老师") + " 这边空出了名额，"
+                        + "你已从递补提升为拟录取，请留意「我的选拔」并尽快确认");
         return next;
     }
 

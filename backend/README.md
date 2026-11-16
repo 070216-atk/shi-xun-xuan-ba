@@ -10,14 +10,14 @@
 | 要配什么 | 放哪 | 会不会被提交 |
 | --- | --- | --- |
 | JDK 路径 | 环境变量 `JAVA_HOME` | 不涉及文件 |
-| MySQL 密码 | `backend/src/main/resources/application-local.yml` | ❌ 已被 `.gitignore` 排除 |
+| MySQL 密码 | `backend/application-local.yml`（jar 同目录那份） | ❌ 已被 `.gitignore` 排除 |
 | JWT 密钥 | 同上 | ❌ |
 
 **新建你自己的本机配置：**
 
 ```powershell
-cd backend\src\main\resources
-Copy-Item application-local.yml.example application-local.yml
+cd backend
+Copy-Item src\main\resources\application-local.yml.example application-local.yml
 ```
 
 然后打开 `application-local.yml`，把两处占位符换掉。
@@ -114,10 +114,11 @@ backend/src/main/
 │   ├── entity/                     与表一一对应
 │   ├── dto/                        请求/响应对象
 │   └── config/                     跨域、异常处理、拦截器
-└── resources/
-    ├── application.yml             ✅ 已有（不含任何密码）
-    ├── application-local.yml       ← 每人自己建，不提交
-    └── mapper/                     SQL XML
+├── resources/
+│   ├── application.yml             ✅ 已有（不含任何密码）
+│   ├── application-local.yml.example  模板（可提交）
+│   └── mapper/                     SQL XML
+└── application-local.yml           ← 每人自己建，不提交；不进 jar
 ```
 
 **三条纪律**：

@@ -52,11 +52,11 @@ cd shi-xun-xuan-ba
 ### 第 2 步：建自己的本机配置（不提交）
 
 ```powershell
-cd backend\src\main\resources
-Copy-Item application-local.yml.example application-local.yml
+cd backend
+Copy-Item src\main\resources\application-local.yml.example application-local.yml
 ```
 
-打开 `application-local.yml`，填 MySQL 密码和 JWT 密钥。
+打开 `backend\application-local.yml`，填 MySQL 密码和 JWT 密钥。
 **这两项每人不同，绝不能写进 `application.yml`。**
 
 ### 第 3 步：导入数据库

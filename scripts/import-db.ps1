@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 #  学生实训室进组选拔系统 · 一键初始化数据库
 #  由「初始化数据库.cmd」双击调用
 # ============================================================
@@ -7,7 +7,11 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $dbDir = Join-Path $root 'framework\3.database'
-$localYml = Join-Path $root 'backend\src\main\resources\application-local.yml'
+$localYml = Join-Path $root 'backend\application-local.yml'
+if (-not (Test-Path $localYml)) {
+    # 兼容老布局（配置还放在 src\main\resources 里的情况）
+    $localYml = Join-Path $root 'backend\src\main\resources\application-local.yml'
+}
 
 function Step($m) { Write-Host "  $m" -ForegroundColor Cyan }
 function Fail($m) {
@@ -96,13 +100,18 @@ SELECT (SELECT COUNT(*) FROM lab)      AS 实训室,
     Write-Host ""
     $demo = Read-Host "  是否把第 1 轮「意向填报」阶段设成现在开放（有效期 20 天），方便演示？(y/N)"
     if ($demo -eq 'y') {
-        # 只开阶段 3：同一时间只允许一个阶段开放，不能和面试阶段并行
+        # 只开阶段 3：同一时间只允许一个阶段开放，不能和面试阶段并行。
+        # 必须先关掉本轮其他阶段——seed 默认会开阶段 1，不关就会出现两个"当前阶段"。
         & $mysql "--defaults-extra-file=$cnf" --default-character-set=utf8mb4 -e @"
 USE lab_selection;
+UPDATE stage SET start_at = DATE_SUB(NOW(), INTERVAL 3 DAY),
+                 end_at   = DATE_SUB(NOW(), INTERVAL 2 DAY)
+ WHERE round_no = 1;
 UPDATE stage SET start_at = DATE_SUB(NOW(), INTERVAL 1 HOUR),
                  end_at   = DATE_ADD(NOW(), INTERVAL 20 DAY)
  WHERE round_no = 1 AND stage_no = 3;
-SELECT stage_no, name, start_at, end_at FROM stage WHERE round_no = 1 ORDER BY stage_no;
+SELECT stage_no, name, start_at, end_at, IF(NOW() BETWEEN start_at AND end_at,'开放','关闭') AS 状态
+  FROM stage WHERE round_no = 1 ORDER BY stage_no;
 "@
         Step "已开放「意向填报」（有效期 20 天），其余阶段保持未开放"
     }

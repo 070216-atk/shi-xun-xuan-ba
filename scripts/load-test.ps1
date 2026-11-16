@@ -1,4 +1,4 @@
-﻿<#
+<#
     并发压测：验证「名额行锁」在超卖场景下真的能挡住。
     
     思路：
@@ -24,7 +24,11 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 $root = Split-Path -Parent $PSScriptRoot
-$localYml = Join-Path $root 'backend\src\main\resources\application-local.yml'
+$localYml = Join-Path $root 'backend\application-local.yml'
+if (-not (Test-Path $localYml)) {
+    # 兼容老布局（配置还放在 src\main\resources 里的情况）
+    $localYml = Join-Path $root 'backend\src\main\resources\application-local.yml'
+}
 $api = "http://localhost:$BasePort/api"
 
 if (-not (Test-Path $localYml)) {

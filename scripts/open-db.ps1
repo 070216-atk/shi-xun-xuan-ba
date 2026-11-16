@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 #  学生实训室进组选拔系统 · 用命令行打开数据库
 #  由「打开数据库.cmd」双击调用
 #  直接进 mysql 交互界面，退出后自动删掉临时密码文件
@@ -9,7 +9,11 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 $root = Split-Path -Parent $PSScriptRoot
-$localYml = Join-Path $root 'backend\src\main\resources\application-local.yml'
+$localYml = Join-Path $root 'backend\application-local.yml'
+if (-not (Test-Path $localYml)) {
+    # 兼容老布局（配置还放在 src\main\resources 里的情况）
+    $localYml = Join-Path $root 'backend\src\main\resources\application-local.yml'
+}
 
 function Fail($m) {
     Write-Host ""

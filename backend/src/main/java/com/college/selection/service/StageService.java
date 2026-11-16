@@ -46,6 +46,20 @@ public class StageService {
                 s.remainingSeconds = Duration.between(now, s.endAt).getSeconds();
             }
         }
+
+        // 同一时间只应有一个阶段是"当前阶段"。数据上出现重叠时（手工改库、导入脚本直接
+        // UPDATE 而不先关其他阶段），取流程位置最靠后的那个，避免前端拿到两个 current
+        // 而各自显示不同的阶段。open 标记保留原样，"开放中"仍能看出确实有两个窗口。
+        Stage latestOpen = null;
+        for (Stage s : stages) {
+            if (Boolean.TRUE.equals(s.open)
+                    && (latestOpen == null || s.stageNo > latestOpen.stageNo)) {
+                latestOpen = s;
+            }
+        }
+        for (Stage s : stages) {
+            s.isCurrent = latestOpen != null && s.stageNo.equals(latestOpen.stageNo);
+        }
         return stages;
     }
 

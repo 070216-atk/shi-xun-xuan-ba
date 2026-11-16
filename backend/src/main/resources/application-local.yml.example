@@ -1,8 +1,8 @@
 # ============================================================
 #  本机配置模板
-#  用法：复制本文件为 application-local.yml（同目录），填自己的值。
+#  用法：复制本文件到 backend/ 下并改名 application-local.yml，填自己的值。
 #        application-local.yml 已被 .gitignore 排除，不会被提交。
-#  放在：backend/src/main/resources/application-local.yml
+#  放在：backend/application-local.yml（与 src 同级，不打进 jar）
 # ============================================================
 
 spring:
