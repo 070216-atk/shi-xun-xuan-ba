@@ -177,6 +177,22 @@ INSERT INTO stage (round_no, stage_no, name, start_at, end_at, description) VALU
 -- SELECT stage_no, name, start_at, end_at FROM stage ORDER BY stage_no;
 
 -- ------------------------------------------------------------
+-- 为每位导师补齐教师账号
+-- 已手工建过 teacher01~04（刘冠军/佳浩/吴国新/高璇），其余按导师 id 生成：
+--   用户名 = m + 两位导师id（例如 m03），密码 123456（占位符由后端启动时加密）
+-- 注意不要用 teacher+id，会和已有的 teacher01~04 撞名。
+-- ------------------------------------------------------------
+INSERT INTO sys_user (username, password_hash, role, code, real_name, lab_id, mentor_id)
+SELECT CONCAT('m', LPAD(m.id, 2, '0')),
+       '$2a$10$REPLACE_WITH_REAL_BCRYPT',
+       'TEACHER',
+       CONCAT('M', LPAD(m.id, 5, '0')),
+       m.name,
+       m.lab_id,
+       m.id
+  FROM mentor m
+ WHERE m.id NOT IN (1, 2, 7, 14);
+-- ------------------------------------------------------------
 -- 通知公告（管理端可增删改，前台首页展示）
 -- ------------------------------------------------------------
 INSERT INTO notice (title, content, publisher_id, is_top, status) VALUES
