@@ -26,7 +26,7 @@
         </el-table-column>
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="save(row)">保存</el-button>
+            <el-button type="primary" size="small" :disabled="![4, 5, 6].includes(store.currentStage)" @click="save(row)">保存</el-button>
           </template>
         </el-table-column>
       </el-table>

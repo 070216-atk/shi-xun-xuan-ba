@@ -69,7 +69,7 @@
           <div v-if="t.interviewNote" class="muted" style="font-size:12px">约谈记录：{{ t.interviewNote }}</div>
           <div v-if="t.rejectReason" style="font-size:12px;color:#c45656">拒绝原因：{{ t.rejectReason }}</div>
         </div>
-        <el-button v-if="t.status === 'PENDING'" size="small" plain @click="doCancelTransfer(t)">撤销申请</el-button>
+        <el-button v-if="t.status === 'PENDING'" size="small" plain :disabled="!canApplyTransfer" @click="doCancelTransfer(t)">撤销申请</el-button>
       </div>
     </div>
 
@@ -96,7 +96,7 @@
       </el-form>
       <template #footer>
         <el-button @click="transferDialog = false">取消</el-button>
-        <el-button type="primary" :loading="transferSaving" @click="doApplyTransfer">提交申请</el-button>
+        <el-button type="primary" :loading="transferSaving" :disabled="!canApplyTransfer" @click="doApplyTransfer">提交申请</el-button>
       </template>
     </el-dialog>
 

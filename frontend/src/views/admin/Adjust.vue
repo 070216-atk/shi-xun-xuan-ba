@@ -98,7 +98,7 @@
         </el-table-column>
         <el-table-column label="操作" width="110">
           <template #default="{ row }">
-            <el-button size="small" type="primary" :disabled="!t1[row.code]"
+            <el-button size="small" type="primary" :disabled="!adjustOpen || !t1[row.code]"
               @click="assign(1, row.code, t1[row.code])">安排录取</el-button>
           </template>
         </el-table-column>

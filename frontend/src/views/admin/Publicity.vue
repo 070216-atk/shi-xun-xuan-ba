@@ -1,6 +1,8 @@
 <template>
   <div>
     <div class="page-title">公示管理</div>
+    <el-alert v-if="store.currentStage !== 8" type="info" :closable="false" style="margin-bottom:12px"
+      title="公示相关操作只在「8 结果公示与正式入组」阶段可用。现在不在该阶段，按钮已禁用 —— 请先去「流程配置」切到阶段 8。" />
     <div class="card">
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         <el-tag :type="statusType">{{ statusText }}</el-tag>
@@ -8,8 +10,8 @@
         <span v-if="store.publicity.published" class="muted">公示开始：{{ store.publicity.start }}（公示期 1 天）</span>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <el-button type="primary" :disabled="store.publicity.published || !rows.length" @click="publish">发布公示</el-button>
-        <el-button type="success" :disabled="!store.publicity.published || store.publicity.ended" @click="endPublicity">
+        <el-button type="primary" :disabled="store.publicity.published || !rows.length || store.currentStage !== 8" @click="publish">发布公示</el-button>
+        <el-button type="success" :disabled="!store.publicity.published || store.publicity.ended || store.currentStage !== 8" @click="endPublicity">
           结束公示，正式入组
         </el-button>
         <el-button @click="refresh">刷新</el-button>
@@ -27,13 +29,13 @@
         <el-table-column label="异议" width="160">
           <template #default="{ row }">
             <el-tag v-if="hasObjection(row.code)" type="danger" size="small">有异议</el-tag>
-            <el-button v-else size="small" :disabled="!store.publicity.published || store.publicity.ended"
+            <el-button v-else size="small" :disabled="!store.publicity.published || store.publicity.ended || store.currentStage !== 8"
               @click="mark(row)">标记异议</el-button>
           </template>
         </el-table-column>
       </el-table>
       <div style="margin-top:12px">
-        <el-button size="small" :disabled="!objectionCount" @click="resolve">异议已处理完（清零）</el-button>
+        <el-button size="small" :disabled="!objectionCount || store.currentStage !== 8" @click="resolve">异议已处理完（清零）</el-button>
         <span class="muted" style="margin-left:8px">存在未处理异议时，后端会拒绝结束公示（刷新页面也不会丢）。</span>
       </div>
       <div v-if="objectionCount" class="objection-box">

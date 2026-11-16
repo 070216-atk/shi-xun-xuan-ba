@@ -24,14 +24,15 @@
       <el-alert v-if="!roundOpen" type="info" :closable="false" style="margin-bottom:12px"
         :title="`第 ${store.round} 轮已结束，以下操作请先在右上角切换到进行中的轮次。`" />
       <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <el-button type="primary" :disabled="!roundOpen" @click="publish">公布剩余名额</el-button>
-        <el-button :disabled="!roundOpen" @click="settle">结算拟录取</el-button>
-        <el-button type="warning" :disabled="!roundOpen || store.round >= 3" @click="openRound">
+        <el-button type="primary" :disabled="!roundOpen || ![2, 3, 6].includes(store.currentStage)" @click="publish">公布剩余名额</el-button>
+        <el-button :disabled="!roundOpen || ![5, 6].includes(store.currentStage)" @click="settle">结算拟录取</el-button>
+        <el-button type="warning" :disabled="!roundOpen || store.round >= 3 || store.currentStage < 7" @click="openRound">
           {{ store.round >= 3 ? '已完成三轮' : `开启第 ${store.round + 1} 轮补录` }}
         </el-button>
       </div>
       <p class="muted" style="margin-top:8px">
-        「结算拟录取」用于分轮补录：导师发完名单后点一次，只有 1 个拟录取意向的学生自动确认，收到多个意向的学生需在本轮自行选择。
+        「结算拟录取」用于分轮补录：导师发完名单后点一次，只有 1 个拟录取意向的学生自动确认，收到多个意向的学生需在本轮自行选择。<br />
+阶段限制：<b>公布名额</b> 在 2 开放日 / 3 填报 / 6 补录；<b>结算</b> 在 5 确认 / 6 补录；<b>开启下一轮</b> 要等本轮走到 7 统筹调剂 或 8 公示。
       </p>
     </div>
   </div>

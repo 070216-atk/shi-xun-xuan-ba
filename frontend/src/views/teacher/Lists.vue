@@ -87,8 +87,8 @@
           <el-tag v-if="o.scoreTotal != null" size="small" style="margin-left:6px">均分 {{ o.scoreTotal }}</el-tag>
         </span>
         <span>
-          <el-button size="small" type="primary" @click="doAccept(o)">接收</el-button>
-          <el-button size="small" type="danger" plain @click="doReject(o)">拒绝</el-button>
+          <el-button size="small" type="primary" :disabled="![4, 5, 6].includes(store.currentStage)" @click="doAccept(o)">接收</el-button>
+          <el-button size="small" type="danger" plain :disabled="![4, 5, 6].includes(store.currentStage)" @click="doReject(o)">拒绝</el-button>
         </span>
       </div>
     </div>
@@ -108,8 +108,8 @@
             placeholder="约谈记录（选填，学生能看到）" style="margin-top:6px;max-width:420px" />
         </div>
         <span style="display:flex;gap:8px">
-          <el-button size="small" type="primary" @click="doAcceptTransfer(t)">接收</el-button>
-          <el-button size="small" type="danger" plain @click="doRejectTransfer(t)">拒绝</el-button>
+          <el-button size="small" type="primary" :disabled="store.currentStage !== 7" @click="doAcceptTransfer(t)">接收</el-button>
+          <el-button size="small" type="danger" plain :disabled="store.currentStage !== 7" @click="doRejectTransfer(t)">拒绝</el-button>
         </span>
       </div>
     </div>
@@ -118,7 +118,7 @@
       <p class="muted">撤销后名额立即释放，并按递补顺位自动补位；每次撤销都会写入操作日志。</p>
       <div v-for="c in confirmed" :key="c" class="rank-row">
         <span>{{ nameOf(c) }} <el-tag type="success" size="small">已确认</el-tag></span>
-        <el-button size="small" type="danger" plain @click="revoke(c)">撤销录取</el-button>
+        <el-button size="small" type="danger" plain :disabled="![5, 6].includes(store.currentStage)" @click="revoke(c)">撤销录取</el-button>
       </div>
     </div>
   </div>
