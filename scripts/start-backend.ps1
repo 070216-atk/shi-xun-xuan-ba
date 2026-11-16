@@ -85,9 +85,53 @@ if ($mvnCmd) {
 }
 if ($mvnPath) { Step "Maven: $mvnPath" } else { Step "没有 Maven（如果已有编译好的 jar 也能跑）" }
 
+# ---------- 2.5 已经在跑？先停掉，否则 jar 被占用、打包一定失败 ----------
+$busy = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+if ($busy) {
+    $ownerPid = $busy[0].OwningProcess
+    $owner = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
+    Write-Host ""
+    Write-Host "  8080 已经有服务在跑（PID $ownerPid，$($owner.ProcessName)）" -ForegroundColor Yellow
+    Write-Host "  地址 : http://localhost:8080" -ForegroundColor Green
+    if (-not $owner -or $owner.ProcessName -ne 'java') {
+        Fail "8080 被别的程序占用（$($owner.ProcessName)），不是本项目的后端。`n         请先关掉它，或把 application.yml 里的 server.port 改成别的。"
+    }
+    $ans = Read-Host "  要停掉它、重新打包并重启吗？(y/N)"
+    if ($ans -ne 'y' -and $ans -ne 'Y') {
+        Write-Host "  保持现状，直接用浏览器打开 http://localhost:8080 即可。" -ForegroundColor Green
+        Read-Host "  按回车退出"
+        exit 0
+    }
+    Write-Host "  正在停止 PID $ownerPid ..." -ForegroundColor DarkGray
+    Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
+}
+
+# ---------- 2.6 本机配置就位了吗（否则后面只会报"JWT 未配置"，很难懂）----------
+$localNew = Join-Path $backend 'application-local.yml'
+$localOld = Join-Path $backend 'src\main\resources\application-local.yml'
+if (-not (Test-Path $localNew) -and -not (Test-Path $localOld)) {
+    Fail @"
+找不到本机配置 application-local.yml（里面是 MySQL 密码和 JWT 密钥）。
+         先建一份：
+             cd backend
+             Copy-Item src\main\resources\application-local.yml.example application-local.yml
+         再打开 backend\application-local.yml，把两处占位符换成自己的值。
+"@
+}
+if (-not (Test-Path $localNew)) {
+    Step "提示：配置还在 src\main\resources 里。能跑，但打包时会被带进 jar，建议移到 backend\ 下"
+}
+
 # ---------- 3. 打包 ----------
 if ($mvnPath) {
     Step "编译打包（首次或改了代码会花几秒）..."
+    # target\classes 里可能残留上次编译进去的本机配置（数据库密码），先删掉再打包
+    $staleSecret = Join-Path $backend 'target\classes\application-local.yml'
+    if (Test-Path $staleSecret) {
+        Remove-Item -LiteralPath $staleSecret -Force -ErrorAction SilentlyContinue
+        Step "清掉 target\classes 里残留的 application-local.yml（避免密码进 jar）"
+    }
     Push-Location $backend
     $log = & $mvnPath -o -DskipTests package 2>&1
     $code = $LASTEXITCODE
@@ -99,6 +143,9 @@ if ($mvnPath) {
     Pop-Location
     if ($code -ne 0) {
         $log | Select-Object -Last 25 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        if ($log -match 'being used by another process|EPERM|Unable to rename|Failed to delete') {
+            Fail "jar 被另一个 java 进程占用（有后端还在运行）。`n         先关掉那个窗口，或重新双击本脚本（会自动停掉旧进程再打包）。"
+        }
         Fail "编译失败（上面是最后的报错）。常见原因：依赖没下载完、JDK 版本不对。"
     }
     Step "打包完成"
@@ -109,10 +156,10 @@ if ($mvnPath) {
     Step "使用已有的 jar"
 }
 
-# ---------- 4. 端口检查 ----------
+# ---------- 4. 端口复查（打包期间可能又被别的窗口占了）----------
 $busy = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
 if ($busy) {
-    Fail "8080 端口已经被占用（可能已经开过一个窗口）。`n         先关掉那个窗口，或把 backend\src\main\resources\application.yml 里的 server.port 改成别的。"
+    Fail "8080 又被占用了（打包期间可能有别的窗口启动过）。`n         关掉那个窗口后再双击本脚本。"
 }
 
 # ---------- 5. 启动 ----------
@@ -123,7 +170,14 @@ Write-Host "  演示账号 : admin / teacher01 / student01   密码都是 123456
 Write-Host "  停止服务 : 按 Ctrl + C，或直接关掉这个窗口" -ForegroundColor Gray
 Write-Host ""
 
-& $javaExe -jar $jar
+# 必须在 backend\ 目录下运行：application.yml 用 file:./application-local.yml 读本机配置，
+# 相对路径是按「进程工作目录」解析的，在项目根目录启动会读不到，报 "JWT 未配置"。
+Push-Location $backend
+try {
+    & $javaExe -jar $jar
+} finally {
+    Pop-Location
+}
 $exitCode = $LASTEXITCODE
 
 Write-Host ""
