@@ -98,22 +98,22 @@ SELECT (SELECT COUNT(*) FROM lab)      AS 实训室,
 "@
 
     Write-Host ""
-    $demo = Read-Host "  是否把第 1 轮「意向填报」阶段设成现在开放（有效期 20 天），方便演示？(y/N)"
-    if ($demo -eq 'y') {
-        # 只开阶段 3：同一时间只允许一个阶段开放，不能和面试阶段并行。
-        # 必须先关掉本轮其他阶段——seed 默认会开阶段 1，不关就会出现两个"当前阶段"。
+    $demo = Read-Host "  是否把第 1 轮「1 集中宣讲」阶段延长到 7 天，方便演示？(Y/n)"
+    if ($demo -ne 'n' -and $demo -ne 'N') {
+        # 演示从"阶段 1 集中宣讲"开始，和 seed 的默认一致。只开这一个：
+        # 同一时间只允许一个阶段开放，所以先把本轮其他阶段关掉，再开阶段 1。
         & $mysql "--defaults-extra-file=$cnf" --default-character-set=utf8mb4 -e @"
 USE lab_selection;
 UPDATE stage SET start_at = DATE_SUB(NOW(), INTERVAL 3 DAY),
                  end_at   = DATE_SUB(NOW(), INTERVAL 2 DAY)
  WHERE round_no = 1;
 UPDATE stage SET start_at = DATE_SUB(NOW(), INTERVAL 1 HOUR),
-                 end_at   = DATE_ADD(NOW(), INTERVAL 20 DAY)
- WHERE round_no = 1 AND stage_no = 3;
+                 end_at   = DATE_ADD(NOW(), INTERVAL 7 DAY)
+ WHERE round_no = 1 AND stage_no = 1;
 SELECT stage_no, name, start_at, end_at, IF(NOW() BETWEEN start_at AND end_at,'开放','关闭') AS 状态
   FROM stage WHERE round_no = 1 ORDER BY stage_no;
 "@
-        Step "已开放「意向填报」（有效期 20 天），其余阶段保持未开放"
+        Step "已把第 1 轮「集中宣讲」设成现在开放（7 天），其余阶段关闭"
     }
 }
 finally {
