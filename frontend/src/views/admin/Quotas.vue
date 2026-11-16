@@ -51,12 +51,7 @@ function refresh() {
 async function publish() {
   try {
     const r = await publishQuotas()
-    store.notifications.unshift({
-      time: '刚刚',
-      text: `学院已公布剩余名额，共 ${r.total} 个，未录取学生可重新填报`,
-      read: false
-    })
-    ElMessage.success(`剩余名额已公布（共 ${r.total} 个），已写入操作日志`)
+    ElMessage.success(`剩余名额已公布（共 ${r.total} 个），已给全体学生推送站内通知`)
   } catch (e) {
     ElMessage.error(e.message || '公布失败')
   }

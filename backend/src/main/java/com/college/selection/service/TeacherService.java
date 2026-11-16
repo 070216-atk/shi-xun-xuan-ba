@@ -7,12 +7,17 @@ import com.college.selection.dto.ScoreReq;
 import com.college.selection.dto.TeacherListsReq;
 import com.college.selection.dto.TeacherListsVO;
 import com.college.selection.entity.InterviewInvite;
+import com.college.selection.entity.Lab;
 import com.college.selection.entity.Mentor;
 import com.college.selection.entity.Offer;
+import com.college.selection.entity.Publicity;
 import com.college.selection.entity.SysUser;
+import com.college.selection.mapper.AdminMapper;
 import com.college.selection.mapper.ApplicationMapper;
 import com.college.selection.mapper.InterviewInviteMapper;
+import com.college.selection.mapper.LabMapper;
 import com.college.selection.mapper.MentorMapper;
+import com.college.selection.mapper.NotificationMapper;
 import com.college.selection.mapper.OfferMapper;
 import com.college.selection.mapper.OperationLogMapper;
 import com.college.selection.mapper.SysUserMapper;
@@ -23,10 +28,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class TeacherService {
@@ -46,6 +52,9 @@ public class TeacherService {
     private final OperationLogMapper logMapper;
     private final InterviewInviteMapper inviteMapper;
     private final MentorMapper mentorMapper;
+    private final AdminMapper adminMapper;
+    private final NotificationMapper notificationMapper;
+    private final LabMapper labMapper;
 
     public TeacherService(TeacherMapper teacherMapper,
                           OfferMapper offerMapper,
@@ -54,7 +63,10 @@ public class TeacherService {
                           StageService stageService,
                           OperationLogMapper logMapper,
                           InterviewInviteMapper inviteMapper,
-                          MentorMapper mentorMapper) {
+                          MentorMapper mentorMapper,
+                          AdminMapper adminMapper,
+                          NotificationMapper notificationMapper,
+                          LabMapper labMapper) {
         this.teacherMapper = teacherMapper;
         this.offerMapper = offerMapper;
         this.applicationMapper = applicationMapper;
@@ -63,6 +75,9 @@ public class TeacherService {
         this.logMapper = logMapper;
         this.inviteMapper = inviteMapper;
         this.mentorMapper = mentorMapper;
+        this.adminMapper = adminMapper;
+        this.notificationMapper = notificationMapper;
+        this.labMapper = labMapper;
     }
 
     /** 取出当前登录的导师，校验角色和绑定关系 */
@@ -160,9 +175,18 @@ public class TeacherService {
     @Transactional
     public void saveScore(Long teacherId, Long studentId, Integer round, ScoreReq req) {
         SysUser t = requireTeacher(teacherId);
+        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_CONFIRM, STAGE_REFILL);
 
         if (teacherMapper.countAppliedToLab(studentId, t.labId, round) == 0) {
             throw new BizException(ErrorCode.NO_PERMISSION, "该学生没有报名本实训室，不能评分");
+        }
+        // 面试阶段只给已入围的学生打分；取消入围后不能再新写评分
+        if (stageService.isOpen(round, STAGE_INTERVIEW)
+                && !inviteMapper.findInvitedStudentIds(t.labId, round).contains(studentId)) {
+            throw new BizException(2007, who(studentId) + " 还没有进入本室面试名单，不能评分");
+        }
+        if (req.showcase != null && req.showcase.length() > 1000) {
+            throw new BizException(2007, "学生展示内容最多 1000 字");
         }
         teacherMapper.upsertScore(studentId, t.labId, round, t.mentorId, req, teacherId);
     }
@@ -236,13 +260,30 @@ public class TeacherService {
             }
         }
 
+        // 三份名单不能有重复：同一学生既在拟录取又在递补，会让 offer 唯一键直接 500
+        Set<Long> seen = new HashSet<>();
+        for (Long sid : admitted) {
+            if (!seen.add(sid)) throw dupInLists(sid);
+        }
+        for (Long sid : waitlist) {
+            if (!seen.add(sid)) throw dupInLists(sid);
+        }
+        for (Long sid : adjust) {
+            if (!seen.add(sid)) throw dupInLists(sid);
+        }
+
         Integer quota = offerMapper.lockMentorQuota(t.mentorId);
         if (quota == null) {
             throw new BizException(ErrorCode.NO_PERMISSION, "导师档案不存在");
         }
-        if (admitted.size() > quota) {
+        // 名额跨轮累计：前几轮已确认的人仍占着名额，不能每轮都重新发满
+        List<Long> alreadyConfirmed = offerMapper.findConfirmedStudentIds(t.mentorId, round);
+        int occupiedBefore = Math.max(0,
+                offerMapper.countConfirmed(t.mentorId, round) - alreadyConfirmed.size());
+        if (occupiedBefore + admitted.size() > quota) {
             throw new BizException(ErrorCode.QUOTA_FULL,
-                    String.format("拟录取 %d 人超过名额 %d 人", admitted.size(), quota));
+                    String.format("拟录取 %d 人，加上前几轮已占用的 %d 人超过名额 %d 人",
+                            admitted.size(), occupiedBefore, quota));
         }
 
         // 首轮取阶段 5 的结束时间；补录轮走的是阶段 6，截止就取补录窗口的结束时间
@@ -252,13 +293,14 @@ public class TeacherService {
         LocalDateTime now = LocalDateTime.now();
 
         // 已经确认了本导师的学生，不能被悄悄从名单里移除（否则学生状态会莫名回退）
-        for (Long sid : offerMapper.findConfirmedStudentIds(t.mentorId, round)) {
+        for (Long sid : alreadyConfirmed) {
             if (!admitted.contains(sid)) {
                 throw new BizException(2007,
                         who(sid) + " 已经确认了你的录取意向，不能直接移出名单；如需撤销请联系学院管理员");
             }
         }
 
+        // deleteByMentor 会保留 CONFIRMED 行，所以下面重插时必须跳过这些学生，避免撞唯一键
         offerMapper.deleteByMentor(t.mentorId, round);
 
         List<Long> allStudents = new ArrayList<>();
@@ -300,8 +342,13 @@ public class TeacherService {
 
         List<Offer> inserted = new ArrayList<>();
         for (int i = 0; i < admitted.size(); i++) {
+            Long sid = admitted.get(i);
+            // 已确认的行还在库里（deleteByMentor 保留了），这里不能再插一条同键数据
+            if (alreadyConfirmed.contains(sid)) continue;
             // 拟录取也带顺位（1 为第一顺位），自动录取和递补都按这个顺序
-            inserted.add(insert(t, round, admitted.get(i), "ADMITTED", i + 1, now, deadline));
+            inserted.add(insert(t, round, sid, "ADMITTED", i + 1, now, deadline));
+            notificationMapper.insert(sid, "OFFER", "收到拟录取意向",
+                    t.realName + " 老师已把你列入拟录取名单，请留意「我的选拔」并按时确认");
         }
         for (int i = 0; i < waitlist.size(); i++) {
             inserted.add(insert(t, round, waitlist.get(i), "WAITLIST", i + 1, now, deadline));
@@ -349,76 +396,6 @@ public class TeacherService {
         }
     }
 
-    /**
-     * 自动录取。
-     *
-     * 默认是导师人工挑选；这个接口给"省时省心"的场景用：
-     *   sortBy = score  → 按面试总分从高到低
-     *   sortBy = manual → 按导师已有的排序（rank_no），没排过的按分数排在后面
-     * 录满名额为止，剩下的人自动进递补。
-     */
-    @Transactional
-    public Map<String, Object> autoAdmit(Long teacherId, Integer round, String sortBy) {
-        SysUser t = requireTeacher(teacherId);
-        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_CONFIRM, STAGE_REFILL);
-
-        Integer quota = offerMapper.lockMentorQuota(t.mentorId);
-        if (quota == null) {
-            throw new BizException(ErrorCode.NO_PERMISSION, "导师档案不存在");
-        }
-
-        // 候选池 = 本室面试名单；findInterviewList 已按分数从高到低排（未评分在最后）
-        List<ApplicantVO> pool = inviteMapper.findInterviewList(t.labId, round);
-        if (pool.isEmpty()) {
-            throw new BizException(2007, "本室还没有面试名单，请先在「报名学生」里把学生拉进面试");
-        }
-
-        List<Long> ordered = new ArrayList<>();
-        for (ApplicantVO a : pool) {
-            // 只有评过分的人参与自动录取，否则会被"未评分不能进名单"的校验挡住
-            if (a.scoreTotal != null) {
-                ordered.add(a.studentId);
-            }
-        }
-        if (ordered.isEmpty()) {
-            throw new BizException(2007, "面试名单里还没有已评分的学生，无法自动录取");
-        }
-
-        if ("manual".equalsIgnoreCase(sortBy)) {
-            Map<Long, Integer> rank = new LinkedHashMap<>();
-            for (Offer o : offerMapper.findByMentor(t.mentorId, round)) {
-                if (o.rankNo != null) {
-                    rank.put(o.studentId, o.rankNo);
-                }
-            }
-            ordered.sort(Comparator.comparingInt(sid -> rank.getOrDefault(sid, Integer.MAX_VALUE)));
-        }
-
-        List<Long> admitted = new ArrayList<>();
-        List<Long> waitlist = new ArrayList<>();
-        for (int i = 0; i < ordered.size(); i++) {
-            if (i < quota) {
-                admitted.add(ordered.get(i));
-            } else {
-                waitlist.add(ordered.get(i));
-            }
-        }
-
-        TeacherListsReq req = new TeacherListsReq();
-        req.round = round;
-        req.admitted = admitted;
-        req.waitlist = waitlist;
-        req.adjustCandidates = new ArrayList<>();
-        saveLists(teacherId, round, req);
-
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("sortBy", sortBy == null || sortBy.isBlank() ? "score" : sortBy);
-        m.put("quota", quota);
-        m.put("admitted", admitted.size());
-        m.put("waitlist", waitlist.size());
-        return m;
-    }
-
     // ---------------- 内部调剂（收件方视角） ----------------
 
     /** 别人指定调剂给我的学生 */
@@ -435,6 +412,7 @@ public class TeacherService {
     public Map<String, Object> acceptAdjust(Long teacherId, Integer round, Long offerId) {
         SysUser t = requireTeacher(teacherId);
         stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_CONFIRM, STAGE_REFILL);
+        assertNotPublished(round);
 
         Offer o = offerMapper.lockById(offerId);
         if (o == null) {
@@ -474,6 +452,8 @@ public class TeacherService {
 
         logMapper.insertWithState(teacherId, "TEACHER", "ADJUST_ACCEPT", "OFFER", o.id,
                 "ADJUST_CANDIDATE", "ADMITTED", "接收调剂学生 " + who(o.studentId) + " 为拟录取");
+        notificationMapper.insert(o.studentId, "OFFER", "调剂已被接收",
+                t.realName + " 老师已接收你的调剂，你获得了拟录取资格，请留意确认时间");
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("studentId", o.studentId);
@@ -496,6 +476,9 @@ public class TeacherService {
         if (!"ISSUED".equals(o.status)) {
             throw new BizException(2006, "该调剂记录已处理");
         }
+        if (reason != null && reason.length() > 200) {
+            throw new BizException(2007, "拒绝原因最多 200 字");
+        }
 
         offerMapper.updateStatus(o.id, "DECLINED", null);
         logMapper.insertWithState(teacherId, "TEACHER", "ADJUST_REJECT", "OFFER", o.id,
@@ -505,6 +488,19 @@ public class TeacherService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("studentId", o.studentId);
         return m;
+    }
+
+    /** 同一学生出现在多份名单里时报错 */
+    private BizException dupInLists(Long sid) {
+        return new BizException(2007, who(sid) + " 同时出现在多份名单里，请只保留一处");
+    }
+
+    /** 最终名单一旦公示，任何改录取结果的动作都要停 */
+    private void assertNotPublished(Integer round) {
+        Publicity p = adminMapper.latestPublicity(round);
+        if (p != null && ("PUBLISHED".equals(p.status) || "ENDED".equals(p.status))) {
+            throw new BizException(2010, "最终名单已经公示，不能再调整录取结果；如需调整请先联系学院");
+        }
     }
 
     /** 把数字 id 换成人看得懂的名字，别在报错里甩 ID */
@@ -524,8 +520,14 @@ public class TeacherService {
     @Transactional
     public java.util.Map<String, Object> revoke(Long teacherId, Integer round, Long studentId, String reason) {
         SysUser t = requireTeacher(teacherId);
+        // 撤销只能在"确认/补录"环节做；公示一旦发布，去向就锁死了
+        stageService.assertAnyOpen(round, STAGE_CONFIRM, STAGE_REFILL);
+        assertNotPublished(round);
         if (reason == null || reason.isBlank()) {
             throw new BizException(2007, "撤销录取必须填写原因");
+        }
+        if (reason.length() > 200) {
+            throw new BizException(2007, "撤销原因最多 200 字");
         }
 
         Offer target = null;
@@ -544,6 +546,13 @@ public class TeacherService {
         logMapper.insertWithState(teacherId, "TEACHER", "REVOKE_ADMIT", "OFFER", target.id,
                 "CONFIRMED", "VOID", "撤销 " + who(studentId) + " 的录取，原因：" + reason);
 
+        // 学生在「我的选拔」里只会看到录取没了，必须把导师填的原因原样告诉他
+        Lab lab = labMapper.findById(target.labId == null ? t.labId : target.labId);
+        String labName = lab == null ? "对应实训室" : lab.name;
+        notificationMapper.insert(studentId, "OFFER", "录取已被导师撤销",
+                t.realName + " 老师撤销了你在「" + labName + "」的录取。撤销原因：" + reason
+                        + "。如有疑问请联系该导师或学院；后续补录与调剂安排请留意系统通知。");
+
         // 顺位递补：把本导师递补里 rank 最小的那个提为拟录取
         Offer next = null;
         for (Offer o : all) {
@@ -554,11 +563,16 @@ public class TeacherService {
             }
         }
         Long promotedStudentId = null;
-        if (next != null) {
+        // 递补也要看名额：名额可能被管理员调小过，腾出一个坑不代表还剩坑
+        Integer quota = offerMapper.lockMentorQuota(t.mentorId);
+        int usedNow = offerMapper.countAdmittedByMentor(t.mentorId, round);
+        if (next != null && quota != null && usedNow < quota) {
             offerMapper.promoteToAdmitted(next.id,
                     offerMapper.maxAdmittedRank(t.mentorId, round) + 1,
                     stageService.getEndAt(round, STAGE_CONFIRM));
             promotedStudentId = next.studentId;
+            notificationMapper.insert(next.studentId, "OFFER", "递补成功",
+                    t.realName + " 老师这边空出了名额，你已从递补提升为拟录取，请尽快确认");
         }
 
         java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();

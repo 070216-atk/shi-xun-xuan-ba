@@ -4,18 +4,21 @@ import com.college.selection.common.Result;
 import com.college.selection.config.LoginInterceptor;
 import com.college.selection.dto.ApplicationReq;
 import com.college.selection.dto.StudentStatusVO;
+import com.college.selection.dto.TransferReq;
 import com.college.selection.entity.Application;
 import com.college.selection.entity.Offer;
+import com.college.selection.entity.TransferRequest;
 import com.college.selection.service.ApplicationService;
 import com.college.selection.service.OfferService;
 import com.college.selection.service.StudentStatusService;
+import com.college.selection.service.TransferService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
 
-/** 学生端：填报、查看状态、看意向、确认去向 */
+/** 学生端：填报、查看状态、看意向、确认去向、申请跨室转组 */
 @RestController
 @RequestMapping("/api/student")
 public class StudentController {
@@ -23,13 +26,16 @@ public class StudentController {
     private final ApplicationService applicationService;
     private final OfferService offerService;
     private final StudentStatusService statusService;
+    private final TransferService transferService;
 
     public StudentController(ApplicationService applicationService,
                              OfferService offerService,
-                             StudentStatusService statusService) {
+                             StudentStatusService statusService,
+                             TransferService transferService) {
         this.applicationService = applicationService;
         this.offerService = offerService;
         this.statusService = statusService;
+        this.transferService = transferService;
     }
 
     /** 本人某轮意向，未填报返回 data: null */
@@ -87,5 +93,33 @@ public class StudentController {
             @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
             @RequestParam(defaultValue = "1") Integer round) {
         return Result.ok(offerService.result(userId, round));
+    }
+
+    // ---------------- 跨室转组（已录取后对去向不满意） ----------------
+
+    /** 本人本轮的转组申请（含已处理的历史） */
+    @GetMapping("/transfers")
+    public Result<List<TransferRequest>> transfers(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(transferService.listForStudent(userId, round));
+    }
+
+    /** 提交转组申请：选目标实训室 + 导师 + 理由 */
+    @PostMapping("/transfers")
+    public Result<TransferRequest> submitTransfer(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestBody TransferReq req) {
+        return Result.ok(transferService.submit(userId,
+                req.round == null ? 1 : req.round, req));
+    }
+
+    /** 撤销还没被导师处理的申请 */
+    @DeleteMapping("/transfers/{id}")
+    public Result<Void> cancelTransfer(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @PathVariable Long id) {
+        transferService.cancel(userId, id);
+        return Result.ok(null);
     }
 }

@@ -4,6 +4,7 @@
       名单管理 — {{ lab?.name || '' }}（第 {{ store.round }} 轮）
       <el-tag v-if="store.currentStage === 5" type="success" style="margin-left:8px">拟录取与学生确认</el-tag>
       <el-tag v-else-if="store.currentStage === 6" type="warning" style="margin-left:8px">分轮补录</el-tag>
+      <el-tag v-else-if="store.currentStage === 7" type="info" style="margin-left:8px">统筹调剂</el-tag>
     </div>
     <el-alert v-if="!canSubmit" type="info" :closable="false" style="margin-bottom:16px"
       title="名单只能在「导师初选与面试考核」「拟录取与学生确认」或「分轮补录」阶段提交；现在不在开放时间内，可以先看名单，等阶段切换后再提交。" />
@@ -18,7 +19,7 @@
           <div class="page-title">拟录取名单（{{ admit.length }}/{{ quota }}）</div>
           <el-select v-model="admit" multiple :multiple-limit="quota" placeholder="从已面试学生中选择" style="width:100%">
             <el-option v-for="r in candidates" :key="r.code" :value="r.code"
-              :label="`${r.realName}（均分 ${r.scoreTotal ?? '—'}）`"
+              :label="optionLabel(r)"
               :disabled="waitlist.includes(r.code) || adjust.includes(r.code)" />
           </el-select>          <div v-for="(code, i) in admit" :key="'a' + code" class="rank-row">
             <span>第 {{ i + 1 }} 顺位：{{ nameOf(code) }}</span>
@@ -34,7 +35,7 @@
           <div class="page-title">递补名单（按顺位）</div>
           <el-select v-model="waitlist" multiple placeholder="选择后按顺序定顺位" style="width:100%;margin-bottom:8px">
             <el-option v-for="r in candidates" :key="r.code" :value="r.code"
-              :label="`${r.realName}（均分 ${r.scoreTotal ?? '—'}）`"
+              :label="optionLabel(r)"
               :disabled="admit.includes(r.code) || adjust.includes(r.code)" />
           </el-select>
           <div v-for="(code, i) in waitlist" :key="code" class="rank-row">
@@ -51,7 +52,7 @@
           <div class="page-title">内部调剂候选名单</div>
           <el-select v-model="adjust" multiple placeholder="选择调剂候选" style="width:100%;margin-bottom:8px">
             <el-option v-for="r in candidates" :key="r.code" :value="r.code"
-              :label="`${r.realName}（均分 ${r.scoreTotal ?? '—'}）`"
+              :label="optionLabel(r)"
               :disabled="admit.includes(r.code) || waitlist.includes(r.code)" />
           </el-select>
           <p class="muted" style="margin:0 0 6px">调剂给谁由你指定，对方导师接收后即成为他的拟录取（不再二次面试）。</p>
@@ -70,22 +71,12 @@
         提交三份名单并发出拟录取
       </el-button>
       <p class="muted">
-        {{ store.currentStage === 4
+        {{ [3, 4].includes(store.currentStage)
           ? '提交后系统向学生发出拟录取意向；进入「拟录取与学生确认」阶段时，只有 1 个意向的学生会自动确认。'
           : '当前已进入「拟录取与学生确认」或补录阶段，提交后只有 1 个拟录取意向的学生会立即自动确认；收到多个意向的学生自行选择唯一去向。' }}
       </p>
     </div>
 
-    <div class="card">
-      <div class="page-title">自动录取（可选）</div>
-      <p class="muted">
-        默认是你手动挑选。如果嫌麻烦，可以让系统按顺序录满你的名额（{{ quota }} 人），剩下的人自动进递补。
-      </p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <el-button :loading="autoing" @click="doAuto('score')">按面试评分自动录取</el-button>
-        <el-button :loading="autoing" @click="doAuto('manual')">按我当前的排序自动录取</el-button>
-      </div>
-    </div>
     <div v-if="store.adjustInbox.length" class="card">
       <div class="page-title">别人调剂给我的学生</div>
       <p class="muted">接收后直接成为你的拟录取（占用你的名额），不再二次面试。</p>
@@ -101,6 +92,27 @@
         </span>
       </div>
     </div>
+    <div v-if="store.transferInbox.length || store.currentStage === 7" class="card">
+      <div class="page-title">学生转组申请（约谈后处理）</div>
+      <p class="muted">
+        已录取的学生对去向不满意时会申请转到你这里。线下约谈后决定是否接收：
+        接收后他原来的录取自动解除，直接变成你的已确认录取（占用你一个名额）。
+      </p>
+      <el-empty v-if="!store.transferInbox.length" description="暂时没有待处理的转组申请" :image-size="56" />
+      <div v-for="t in store.transferInbox" :key="t.id" class="rank-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div style="flex:1;min-width:240px">
+          <b>{{ t.studentName }}</b>（{{ t.studentCode }}）
+          <span class="muted">原去向 {{ t.fromLabName }} · {{ t.fromMentorName }} → 申请转到 {{ t.targetLabName }}</span>
+          <div class="muted" style="font-size:12px;margin-top:4px">申请理由：{{ t.reason }}</div>
+          <el-input v-model="transferNotes[t.id]" size="small" maxlength="200" show-word-limit
+            placeholder="约谈记录（选填，学生能看到）" style="margin-top:6px;max-width:420px" />
+        </div>
+        <span style="display:flex;gap:8px">
+          <el-button size="small" type="primary" @click="doAcceptTransfer(t)">接收</el-button>
+          <el-button size="small" type="danger" plain @click="doRejectTransfer(t)">拒绝</el-button>
+        </span>
+      </div>
+    </div>
     <div v-if="confirmed.length" class="card">
       <div class="page-title">已确认名单（可撤销）</div>
       <p class="muted">撤销后名额立即释放，并按递补顺位自动补位；每次撤销都会写入操作日志。</p>
@@ -113,9 +125,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { store, labById, loadTeacher, submitLists, revokeAdmit, autoAdmit, acceptAdjust, rejectAdjust } from '../../store'
+import { store, labById, nameByCode, loadTeacher, submitLists, revokeAdmit, acceptAdjust, rejectAdjust, acceptTransfer, rejectTransfer } from '../../store'
 
 const lab = computed(() => labById(store.user?.labId))
 const quota = computed(() => {
@@ -135,12 +147,23 @@ const saving = ref(false)
 /** 提交名单的窗口：面试考核（4）、拟录取与学生确认（5）、分轮补录（6） */
 const canSubmit = computed(() => [4, 5, 6].includes(store.currentStage))
 
-const interviewed = computed(() =>
-  (store.applicants || []).filter(r => r.scoreTotal != null)
-)
+// 面试阶段（4）只显示本室面试名单里的人：名单成员必须已入围，否则后端会拒绝；
+// 阶段 5/6 允许对整个报名池（已评分者）补交修正
+const interviewed = computed(() => {
+  const pool = store.currentStage === 4 ? (store.interviewList || []) : (store.applicants || [])
+  return pool.filter(r => r.scoreTotal != null)
+})
 
-// 三份名单都只能从已完成面试评分的学生里选（补录阶段也一样，不能跳过面试）
-const candidates = interviewed
+// 三份名单都只能从已完成面试评分的学生里选（补录阶段也一样，不能跳过面试）；
+// 但跨室转组接收、学院统筹安置进来的学生没报过本室，也要能在名单里正常显示，否则只剩数字
+const candidates = computed(() => {
+  const base = interviewed.value
+  const have = new Set(base.map((r) => r.code))
+  const saved = store.labLists[store.user?.labId] || {}
+  const extra = [...new Set([...(saved.admit || []), ...(saved.waitlist || []), ...(saved.adjust || [])])]
+    .filter((code) => !have.has(code))
+  return [...base, ...extra.map((code) => ({ code, realName: nameOf(code), scoreTotal: null }))]
+})
 
 // 已经确认了本导师的学生（可以撤销）
 const confirmed = computed(() => {
@@ -159,8 +182,11 @@ async function revoke(code) {
         type: 'warning',
         confirmButtonText: '确认撤销',
         cancelButtonText: '取消',
-        inputPlaceholder: '例如：学生主动放弃 / 经沟通调整到其他实训室',
-        inputValidator: (v) => (v && v.trim() ? true : '必须填写撤销原因')
+        inputPlaceholder: '例如：学生主动放弃 / 经沟通调整到其他实训室（200 字以内）',
+        inputValidator: (v) => {
+          if (!v || !v.trim()) return '必须填写撤销原因'
+          return v.trim().length > 200 ? '原因最多 200 字' : true
+        }
       }
     )
     reason = r.value.trim()
@@ -178,9 +204,12 @@ async function revoke(code) {
   }
 }
 
+function optionLabel(r) {
+  return r.scoreTotal == null ? r.realName : `${r.realName}（均分 ${r.scoreTotal}）`
+}
 function nameOf(code) {
   const r = (store.applicants || []).find(x => x.code === code)
-  return r ? r.realName : code
+  return r ? r.realName : nameByCode(code)
 }
 function moveIn(which, i, dir) {
   const arr = which === 'admit' ? admit.value : waitlist.value
@@ -198,30 +227,21 @@ async function loadLists() {
     admit.value = [...saved.admit]
     waitlist.value = [...saved.waitlist]
     adjust.value = [...saved.adjust]
+    // 内部调剂的目标导师也要恢复，否则刷新后下拉框全空、重新提交会丢掉目标
+    Object.keys(adjustTargets).forEach(k => delete adjustTargets[k])
+    Object.assign(adjustTargets, saved.adjustTargets || {})
   }
 }
 
-const autoing = ref(false)
+// 顶栏切换轮次后重新按新一轮加载，避免把上一轮的名单带着提交
+watch(() => store.round, () => {
+  admit.value = []
+  waitlist.value = []
+  adjust.value = []
+  Object.keys(adjustTargets).forEach(k => delete adjustTargets[k])
+  loadLists().catch(e => ElMessage.error(e.message))
+})
 
-async function doAuto(sortBy) {
-  const label = sortBy === 'score' ? '面试评分' : '你当前的排序'
-  try {
-    await ElMessageBox.confirm(
-      `按${label}自动录取？会覆盖你当前的名单，录满名额（${quota.value} 人）为止，其余进递补。`,
-      '自动录取', { type: 'warning', confirmButtonText: '开始', cancelButtonText: '取消' }
-    )
-  } catch { return }
-  autoing.value = true
-  try {
-    const r = await autoAdmit(sortBy)
-    ElMessage.success(`自动录取完成：拟录取 ${r.admitted} 人，递补 ${r.waitlist} 人`)
-    await loadLists()
-  } catch (e) {
-    ElMessage.error(e.message || '自动录取失败')
-  } finally {
-    autoing.value = false
-  }
-}
 async function doAccept(o) {
   try {
     await ElMessageBox.confirm(
@@ -249,6 +269,51 @@ async function doReject(o) {
     ElMessage.error(e.message || '操作失败')
   }
 }
+// ---------------- 跨室转组：学生申请转到我的名下 ----------------
+
+const transferNotes = reactive({})
+
+async function doAcceptTransfer(t) {
+  try {
+    await ElMessageBox.confirm(
+      `接收 ${t.studentName}？会占用你一个名额；他原来在「${t.fromLabName} · ${t.fromMentorName}」的录取会立即解除。`,
+      '接收转组', { type: 'warning', confirmButtonText: '接收', cancelButtonText: '取消' }
+    )
+  } catch { return }
+  try {
+    await acceptTransfer(t.id, (transferNotes[t.id] || '').trim())
+    delete transferNotes[t.id]
+    ElMessage.success(`已接收 ${t.studentName}`)
+  } catch (e) {
+    ElMessage.error(e.message || '接收失败')
+  }
+}
+
+async function doRejectTransfer(t) {
+  let reason = ''
+  try {
+    const r = await ElMessageBox.prompt(`拒绝 ${t.studentName} 的转组申请？请填写原因，学生能看到。`,
+      '拒绝转组', {
+        type: 'warning',
+        confirmButtonText: '拒绝',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：本方向名额已满 / 面试后认为方向不匹配（200 字以内）',
+        inputValidator: (v) => {
+          if (!v || !v.trim()) return '必须填写拒绝原因'
+          return v.trim().length > 200 ? '原因最多 200 字' : true
+        }
+      })
+    reason = r.value.trim()
+  } catch { return }
+  try {
+    await rejectTransfer(t.id, reason, (transferNotes[t.id] || '').trim())
+    delete transferNotes[t.id]
+    ElMessage.success(`已拒绝 ${t.studentName}`)
+  } catch (e) {
+    ElMessage.error(e.message || '操作失败')
+  }
+}
+
 async function submit() {
   if (!admit.value.length) return ElMessage.warning('拟录取名单不能为空')
   if (admit.value.length > quota.value) return ElMessage.error('拟录取人数超过你自己的名额')

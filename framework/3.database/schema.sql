@@ -31,6 +31,7 @@ DROP TABLE IF EXISTS notice;
 DROP TABLE IF EXISTS notification;
 DROP TABLE IF EXISTS operation_log;
 DROP TABLE IF EXISTS publicity;
+DROP TABLE IF EXISTS transfer_request;
 DROP TABLE IF EXISTS offer;
 DROP TABLE IF EXISTS interview_score;
 DROP TABLE IF EXISTS application_item;
@@ -225,6 +226,36 @@ CREATE TABLE offer (
   CONSTRAINT fk_offer_student FOREIGN KEY (student_id) REFERENCES sys_user (id),
   CONSTRAINT fk_offer_lab     FOREIGN KEY (lab_id)     REFERENCES lab (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='录取意向/递补/调剂候选';
+
+-- ------------------------------------------------------------
+-- 9.1 跨室转组申请（已录取学生对去向不满意，申请转到别的实训室）
+-- ------------------------------------------------------------
+CREATE TABLE transfer_request (
+  id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  student_id       BIGINT UNSIGNED NOT NULL,
+  round_no         TINYINT         NOT NULL DEFAULT 1,
+  from_offer_id    BIGINT UNSIGNED NOT NULL COMMENT '学生当前已确认的那条录取意向',
+  from_mentor_id   BIGINT UNSIGNED NOT NULL,
+  from_lab_id      BIGINT UNSIGNED NOT NULL,
+  target_lab_id    BIGINT UNSIGNED NOT NULL,
+  target_mentor_id BIGINT UNSIGNED NOT NULL,
+  reason           VARCHAR(200)    NOT NULL COMMENT '学生申请理由（学生自己填）',
+  status           ENUM('PENDING','ACCEPTED','REJECTED','CANCELED') NOT NULL DEFAULT 'PENDING',
+  interview_note   VARCHAR(200)    DEFAULT NULL COMMENT '导师约谈记录',
+  reject_reason    VARCHAR(200)    DEFAULT NULL,
+  handled_by       BIGINT UNSIGNED DEFAULT NULL,
+  handled_at       DATETIME        DEFAULT NULL,
+  created_at       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_tr_student (student_id, round_no, status),
+  KEY idx_tr_mentor  (target_mentor_id, round_no, status),
+  CONSTRAINT fk_tr_student     FOREIGN KEY (student_id)       REFERENCES sys_user (id),
+  CONSTRAINT fk_tr_offer       FOREIGN KEY (from_offer_id)    REFERENCES offer (id),
+  CONSTRAINT fk_tr_from_lab    FOREIGN KEY (from_lab_id)      REFERENCES lab (id),
+  CONSTRAINT fk_tr_to_lab      FOREIGN KEY (target_lab_id)    REFERENCES lab (id),
+  CONSTRAINT fk_tr_from_mentor FOREIGN KEY (from_mentor_id)   REFERENCES mentor (id),
+  CONSTRAINT fk_tr_to_mentor   FOREIGN KEY (target_mentor_id) REFERENCES mentor (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='跨室转组申请';
 
 -- ------------------------------------------------------------
 -- 10. 公示

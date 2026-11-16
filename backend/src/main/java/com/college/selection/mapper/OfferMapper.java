@@ -68,10 +68,11 @@ public interface OfferMapper {
     @Select("SELECT quota FROM mentor WHERE id = #{mentorId} FOR UPDATE")
     Integer lockMentorQuota(@Param("mentorId") Long mentorId);
 
+    /** 名额是跨轮累计的：本轮及之前各轮已确认的人数都要算进占用 */
     @Select("""
             SELECT COUNT(*) FROM offer
              WHERE mentor_id = #{mentorId}
-               AND round_no  = #{round}
+               AND round_no <= #{round}
                AND type      = 'ADMITTED'
                AND status    = 'CONFIRMED'
             """)
@@ -104,7 +105,16 @@ public interface OfferMapper {
 
     // ---------------- 导师提交名单时用 ----------------
 
-    @Delete("DELETE FROM offer WHERE mentor_id = #{mentorId} AND round_no = #{round}")
+    /**
+     * 导师重交名单时清掉本轮旧意向。
+     * 已确认（CONFIRMED）的行必须保留：学生确认过之后就属于终局状态，
+     * 不能因为导师补交一次递补名单就把他的去向删掉。
+     */
+    @Delete("""
+            DELETE FROM offer
+             WHERE mentor_id = #{mentorId} AND round_no = #{round}
+               AND status <> 'CONFIRMED'
+            """)
     int deleteByMentor(@Param("mentorId") Long mentorId, @Param("round") Integer round);
 
     /** 统筹调剂时先清掉该学生投给这个导师的旧意向，避免撞唯一键 */
@@ -138,10 +148,10 @@ public interface OfferMapper {
             """)
     List<Offer> findAdjustInbox(@Param("mentorId") Long mentorId, @Param("round") Integer round);
 
-    /** 我已占用的拟录取名额（已下发 + 已确认都算） */
+    /** 我已占用的拟录取名额（已下发 + 已确认都算，跨轮累计） */
     @Select("""
             SELECT COUNT(*) FROM offer
-             WHERE mentor_id = #{mentorId} AND round_no = #{round}
+             WHERE mentor_id = #{mentorId} AND round_no <= #{round}
                AND type = 'ADMITTED' AND status IN ('ISSUED', 'CONFIRMED')
             """)
     int countAdmittedByMentor(@Param("mentorId") Long mentorId, @Param("round") Integer round);
@@ -251,10 +261,10 @@ public interface OfferMapper {
             """)
     int countAdmittedIssued(@Param("studentId") Long studentId, @Param("round") Integer round);
 
-    /** 该学生本轮是否已经确认了某个去向（可能是别的导师） */
+    /** 该学生截至本轮（含往轮）是否已经确认了某个去向：录取是终局，后续轮次不能再被分配 */
     @Select("""
             SELECT COUNT(*) FROM offer
-             WHERE student_id = #{studentId} AND round_no = #{round} AND status = 'CONFIRMED'
+             WHERE student_id = #{studentId} AND round_no <= #{round} AND status = 'CONFIRMED'
             """)
     int countAnyConfirmed(@Param("studentId") Long studentId, @Param("round") Integer round);
 

@@ -3,28 +3,32 @@ package com.college.selection.controller;
 import com.college.selection.common.Result;
 import com.college.selection.config.LoginInterceptor;
 import com.college.selection.dto.ApplicantVO;
-import com.college.selection.dto.AutoAdmitReq;
 import com.college.selection.dto.InviteReq;
 import com.college.selection.dto.RevokeReq;
 import com.college.selection.dto.ScoreReq;
 import com.college.selection.dto.TeacherListsReq;
 import com.college.selection.dto.TeacherListsVO;
+import com.college.selection.dto.TransferHandleReq;
+import com.college.selection.entity.TransferRequest;
 import com.college.selection.service.TeacherService;
+import com.college.selection.service.TransferService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
 
-/** 导师端：看报名学生、四维评分、提交三份名单 */
+/** 导师端：看报名学生、四维评分、提交三份名单、处理转组申请 */
 @RestController
 @RequestMapping("/api/teacher")
 public class TeacherController {
 
     private final TeacherService teacherService;
+    private final TransferService transferService;
 
-    public TeacherController(TeacherService teacherService) {
+    public TeacherController(TeacherService teacherService, TransferService transferService) {
         this.teacherService = teacherService;
+        this.transferService = transferService;
     }
 
     /** 本室报名学生（不论名额满不满，全部列出） */
@@ -99,17 +103,6 @@ public class TeacherController {
         return Result.ok(teacherService.interviewList(userId, round));
     }
 
-    // ---------------- 自动录取 ----------------
-
-    /** 自动录取：按评分或按导师排序录满名额，其余进递补 */
-    @PostMapping("/lists/auto")
-    public Result<Map<String, Object>> autoAdmit(
-            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
-            @RequestBody AutoAdmitReq req) {
-        return Result.ok(teacherService.autoAdmit(userId,
-                req.round == null ? 1 : req.round, req.sortBy));
-    }
-
     // ---------------- 内部调剂（我作为接收方） ----------------
 
     /** 别人指定调剂给我的学生 */
@@ -138,5 +131,36 @@ public class TeacherController {
             @RequestBody(required = false) Map<String, String> body) {
         String reason = body == null ? null : body.get("reason");
         return Result.ok(teacherService.rejectAdjust(userId, round, offerId, reason));
+    }
+
+    // ---------------- 跨室转组（已录取学生申请转到我的名下） ----------------
+
+    /** 指定转给我的、还没处理的转组申请 */
+    @GetMapping("/transfer-inbox")
+    public Result<List<TransferRequest>> transferInbox(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(transferService.inbox(userId, round));
+    }
+
+    /** 约谈后接收：原去向作废，学生直接成为我的已确认录取 */
+    @PostMapping("/transfer-inbox/{id}/accept")
+    public Result<TransferRequest> acceptTransfer(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @PathVariable Long id,
+            @RequestBody(required = false) TransferHandleReq req) {
+        return Result.ok(transferService.accept(userId, id,
+                req == null ? null : req.interviewNote));
+    }
+
+    /** 拒绝：学生保留原去向 */
+    @PostMapping("/transfer-inbox/{id}/reject")
+    public Result<TransferRequest> rejectTransfer(
+            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
+            @PathVariable Long id,
+            @RequestBody(required = false) TransferHandleReq req) {
+        return Result.ok(transferService.reject(userId, id,
+                req == null ? null : req.reason,
+                req == null ? null : req.interviewNote));
     }
 }

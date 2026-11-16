@@ -73,16 +73,18 @@ public interface TeacherMapper {
     @Insert("""
             INSERT INTO interview_score
                 (student_id, lab_id, round_no, mentor_id,
-                 score_attitude, score_logic, score_coding, score_time, comment, scored_by)
+                 score_attitude, score_logic, score_coding, score_time, comment, showcase, scored_by)
             VALUES
                 (#{studentId}, #{labId}, #{round}, #{mentorId},
-                 #{req.attitude}, #{req.logic}, #{req.coding}, #{req.time}, #{req.comment}, #{scoredBy})
+                 #{req.attitude}, #{req.logic}, #{req.coding}, #{req.time}, #{req.comment},
+                 #{req.showcase}, #{scoredBy})
             ON DUPLICATE KEY UPDATE
                 score_attitude = VALUES(score_attitude),
                 score_logic    = VALUES(score_logic),
                 score_coding   = VALUES(score_coding),
                 score_time     = VALUES(score_time),
                 comment        = VALUES(comment),
+                showcase       = VALUES(showcase),
                 scored_by      = VALUES(scored_by),
                 scored_at      = NOW()
             """)

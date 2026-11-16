@@ -22,4 +22,7 @@ public class ScoreReq {
     public Integer time;
 
     public String comment;
+
+    /** 学生面试时展示的项目/作品/经历 */
+    public String showcase;
 }

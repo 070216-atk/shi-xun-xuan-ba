@@ -45,10 +45,15 @@ const roundOpen = computed(() => store.rounds.find(r => r.roundNo === store.roun
 /** 当前阶段序号；没有进行中的阶段时为 null */
 const currentNo = computed(() => stages.find(s => s.current)?.id ?? null)
 
-/** 有当前阶段时按流程位置判断，避免"切换阶段"把后面的阶段也压成过去后误显示已结束 */
+/** 已经走过的阶段（序号在当前阶段之前）：不能切回 */
+function isPast(row) {
+  return currentNo.value != null && row.id < currentNo.value
+}
+
+/** "已结束"只用于显示：当前没有开放阶段时，时间窗已过的也算结束；
+ *  但这时仍然要保留「切换到该阶段」按钮，否则时间窗自然走完后管理员就再也切不动了 */
 function isEnded(row) {
-  if (currentNo.value != null) return row.id < currentNo.value
-  return row.remaining === 0
+  return isPast(row) || (currentNo.value == null && row.remaining === 0)
 }
 
 async function switchTo(row) {
@@ -60,7 +65,6 @@ async function switchTo(row) {
   } catch { return }
   try {
     const r = await switchStage(row.id)
-    store.notifications.unshift({ time: '刚刚', text: `阶段已切换：${row.name}`, read: false })
     if (r && r.autoConfirmed != null) {
       ElMessage.success(
         `已切到「${row.name}」：自动确认 ${r.autoConfirmed} 人，${r.multiChoice} 人需自主选择去向`

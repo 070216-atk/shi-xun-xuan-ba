@@ -11,6 +11,7 @@ import com.college.selection.dto.StageUpdateReq;
 import com.college.selection.dto.SwitchStageReq;
 import com.college.selection.entity.Publicity;
 import com.college.selection.entity.Stage;
+import com.college.selection.entity.TransferRequest;
 import com.college.selection.service.AdminService;
 import org.springframework.web.bind.annotation.*;
 
@@ -96,16 +97,12 @@ public class AdminController {
         return Result.ok(null);
     }
 
-    /** ③ 约谈安置（必须等前两级做完） */
-    @PostMapping("/adjust/talk")
-    public Result<Void> adjustTalk(
+    /** 学生自己发起的跨室转组（已录取但想换室），管理端只读查看 */
+    @GetMapping("/transfers")
+    public Result<List<TransferRequest>> transfers(
             @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
-            @RequestBody AdjustReq req) {
-        if (req.studentIds == null || req.studentIds.isEmpty()) {
-            return Result.fail(2008, "必须指定学生");
-        }
-        adminService.adjustTalk(userId, round(req), req.mentorId, req.studentIds.get(0), req.conclusion);
-        return Result.ok(null);
+            @RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(adminService.transfers(userId, round));
     }
 
     /** 发布公示，默认 1 天 */
@@ -132,21 +129,12 @@ public class AdminController {
         return Result.ok(adminService.dashboard(round));
     }
 
-    // ---------------- 收口安置 ----------------
+    // ---------------- 安置检查 ----------------
 
     /** 缺口清单：谁还没着落、还有多少空位、够不够 */
     @GetMapping("/placement/gaps")
     public Result<Map<String, Object>> placementGaps(@RequestParam(defaultValue = "1") Integer round) {
         return Result.ok(adminService.placementGaps(round));
-    }
-
-    /** 收口安置：把没着落的人一次性全部安排掉 */
-    @PostMapping("/placement/finalize")
-    public Result<Map<String, Object>> finalizePlacement(
-            @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
-            @RequestParam(defaultValue = "1") Integer round,
-            @RequestParam(defaultValue = "false") boolean includeRefusers) {
-        return Result.ok(adminService.finalizePlacement(userId, round, includeRefusers));
     }
 
     /** 指定安置：管理员明确指定某个学生去某个导师（必须填原因，学生可见） */
@@ -158,7 +146,8 @@ public class AdminController {
                 req.round == null ? 1 : req.round, req.studentId, req.mentorId, req.reason));
     }
 
-    /** 收口校验：每人恰好一个去向、导师不超录 */    @GetMapping("/placement/verify")
+    /** 安置校验：每人恰好一个去向、导师不超录 */
+    @GetMapping("/placement/verify")
     public Result<Map<String, Object>> placementVerify(@RequestParam(defaultValue = "1") Integer round) {
         return Result.ok(adminService.placementVerify(round));
     }
@@ -170,13 +159,19 @@ public class AdminController {
         return Result.ok(adminService.logs(page, size, action));
     }
 
-    /** 提交一条公示异议（登记用，处理在线下） */
+    /** 提交一条公示异议（登记到操作日志，刷新后仍然可见，处理在线下） */
     @PostMapping("/publicity/objections")
     public Result<Void> addObjection(
             @RequestAttribute(LoginInterceptor.ATTR_USER_ID) Long userId,
             @RequestBody ObjectionReq req) {
-        adminService.addObjection(userId, req.round == null ? 1 : req.round, req.reason);
+        adminService.addObjection(userId, req.round == null ? 1 : req.round, req.studentCode, req.reason);
         return Result.ok(null);
+    }
+
+    /** 当前公示中还没处理的异议列表 */
+    @GetMapping("/publicity/objections")
+    public Result<List<Map<String, Object>>> objections(@RequestParam(defaultValue = "1") Integer round) {
+        return Result.ok(adminService.objections(round));
     }
 
     /** 异议处理完，清零；清零后 /publicity/end 才能通过 */

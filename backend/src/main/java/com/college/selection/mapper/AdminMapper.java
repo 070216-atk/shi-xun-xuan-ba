@@ -27,7 +27,7 @@ public interface AdminMapper {
                       JOIN application_item ai ON ai.application_id = a.id
                      WHERE ai.lab_id = l.id AND a.round_no = #{round} AND a.status = 'SUBMITTED') AS applied,
                    (SELECT COUNT(*) FROM offer o
-                     WHERE o.lab_id = l.id AND o.round_no = #{round}
+                     WHERE o.lab_id = l.id AND o.round_no <= #{round}
                        AND o.type = 'ADMITTED' AND o.status = 'CONFIRMED') AS confirmed,
                    (SELECT COUNT(*) FROM offer o
                      WHERE o.lab_id = l.id AND o.round_no = #{round}
@@ -44,7 +44,7 @@ public interface AdminMapper {
                    l.id AS lab_id, l.code AS lab_code, l.name AS lab_name,
                    m.quota,
                    (SELECT COUNT(*) FROM offer o
-                     WHERE o.mentor_id = m.id AND o.round_no = #{round}
+                     WHERE o.mentor_id = m.id AND o.round_no <= #{round}
                        AND o.type = 'ADMITTED' AND o.status = 'CONFIRMED') AS confirmed
               FROM mentor m
               JOIN lab l ON l.id = m.lab_id
@@ -56,6 +56,11 @@ public interface AdminMapper {
     @Select("""
             SELECT u.id AS student_id, u.code, u.real_name, u.class_name,
                    a.adjust_in_lab, a.adjust_cross,
+                   (SELECT GROUP_CONCAT(DISTINCT ai2.lab_id)
+                      FROM application a2
+                      JOIN application_item ai2 ON ai2.application_id = a2.id
+                     WHERE a2.student_id = u.id AND a2.round_no = #{round}
+                       AND a2.status = 'SUBMITTED') AS lab_ids,
                    (SELECT o.type FROM offer o
                      WHERE o.student_id = u.id AND o.round_no = #{round}
                      ORDER BY FIELD(o.type, 'ADMITTED', 'WAITLIST', 'ADJUST_CANDIDATE') LIMIT 1) AS offer_type,
@@ -70,8 +75,7 @@ public interface AdminMapper {
                                  AND a.round_no = #{round} AND a.status = 'SUBMITTED'
              WHERE u.role = 'STUDENT'
                AND NOT EXISTS (SELECT 1 FROM offer o2
-                                WHERE o2.student_id = u.id AND o2.round_no = #{round}
-                                  AND o2.status = 'CONFIRMED')
+                                WHERE o2.student_id = u.id AND o2.status = 'CONFIRMED')
              ORDER BY u.code
             """)
     List<AdjustPoolVO.Candidate> candidates(@Param("round") Integer round);
@@ -81,17 +85,46 @@ public interface AdminMapper {
             SELECT COUNT(*) FROM application a
              WHERE a.round_no = #{round} AND a.status = 'SUBMITTED' AND a.adjust_in_lab = 1
                AND NOT EXISTS (SELECT 1 FROM offer o
-                                WHERE o.student_id = a.student_id AND o.round_no = #{round}
+                                WHERE o.student_id = a.student_id
                                   AND o.status = 'CONFIRMED')
             """)
     int countPendingInternal(@Param("round") Integer round);
+
+    /**
+     * 室内调剂还"能做得下去"的人数：本人服从室内调剂、还没着落，
+     * 并且他报过的实训室里至少还有一个导师有空位。
+     * 报过的室全满的人不该把跨室调剂一直卡死。
+     */
+    @Select("""
+            SELECT COUNT(*) FROM application a
+             WHERE a.round_no = #{round} AND a.status = 'SUBMITTED' AND a.adjust_in_lab = 1
+               AND NOT EXISTS (SELECT 1 FROM offer o
+                                WHERE o.student_id = a.student_id
+                                  AND o.status = 'CONFIRMED')
+               AND EXISTS (SELECT 1 FROM application_item ai
+                             JOIN mentor m ON m.lab_id = ai.lab_id
+                            WHERE ai.application_id = a.id
+                              AND m.quota > (SELECT COUNT(*) FROM offer o2
+                                              WHERE o2.mentor_id = m.id AND o2.round_no <= #{round}
+                                                AND o2.type = 'ADMITTED' AND o2.status = 'CONFIRMED'))
+            """)
+    int countPlaceableInternal(@Param("round") Integer round);
+
+    /** 该学生本轮是否勾选了"服从跨室调剂" */
+    @Select("""
+            SELECT COUNT(*) FROM application a
+             WHERE a.student_id = #{studentId} AND a.round_no = #{round}
+               AND a.status = 'SUBMITTED' AND a.adjust_cross = 1
+            """)
+    int countStudentObeyCross(@Param("studentId") Long studentId,
+                              @Param("round") Integer round);
 
     /** 还答应服从跨室调剂、但没着落的人数 */
     @Select("""
             SELECT COUNT(*) FROM application a
              WHERE a.round_no = #{round} AND a.status = 'SUBMITTED' AND a.adjust_cross = 1
                AND NOT EXISTS (SELECT 1 FROM offer o
-                                WHERE o.student_id = a.student_id AND o.round_no = #{round}
+                                WHERE o.student_id = a.student_id
                                   AND o.status = 'CONFIRMED')
             """)
     int countPendingCross(@Param("round") Integer round);
@@ -232,7 +265,7 @@ public interface AdminMapper {
             """)
     java.util.List<java.util.Map<String, Object>> confirmedResults(@Param("round") Integer round);
 
-    // ---------------- 收口安置（确保每个人都有实训室） ----------------
+    // ---------------- 安置检查（确保每个人都有实训室） ----------------
 
     /** 本轮已提交填报的学生 */
     @Select("""
@@ -240,13 +273,6 @@ public interface AdminMapper {
              WHERE a.round_no = #{round} AND a.status = 'SUBMITTED'
             """)
     java.util.List<Long> appliedStudentIds(@Param("round") Integer round);
-
-    /** 本轮已经有确认去向的学生 */
-    @Select("""
-            SELECT DISTINCT student_id FROM offer
-             WHERE round_no = #{round} AND status = 'CONFIRMED'
-            """)
-    java.util.List<Long> confirmedStudentIds(@Param("round") Integer round);
 
     /**
      * 所有还没有确认去向的学生（任何轮次都没有 CONFIRMED）。
@@ -278,29 +304,31 @@ public interface AdminMapper {
             SELECT m.id AS mentorId, m.lab_id AS labId, l.code AS labCode, l.name AS labName,
                    m.name AS mentorName, m.quota AS quota,
                    (SELECT COUNT(*) FROM offer o
-                     WHERE o.mentor_id = m.id AND o.round_no = #{round}
+                     WHERE o.mentor_id = m.id AND o.round_no <= #{round}
                        AND o.type = 'ADMITTED' AND o.status = 'CONFIRMED') AS confirmed
               FROM mentor m JOIN lab l ON l.id = m.lab_id
              ORDER BY l.code, m.sort_no, m.id
             """)
     java.util.List<java.util.Map<String, Object>> mentorCapacity(@Param("round") Integer round);
 
-    /** 已填报学生的调剂意愿 + 报过的实训室 */
-    @Select("""
-            SELECT a.student_id AS studentId, ai.lab_id AS labId,
-                   a.adjust_in_lab AS adjustInLab, a.adjust_cross AS adjustCross
-              FROM application a JOIN application_item ai ON ai.application_id = a.id
-             WHERE a.round_no = #{round} AND a.status = 'SUBMITTED'
-            """)
-    java.util.List<java.util.Map<String, Object>> studentWishes(@Param("round") Integer round);
-
-    /** 一个学生有多条确认（校验用，正常应为空） */
+    /** 一个学生有多条确认（校验用，正常应为空；跨轮也算重复） */
     @Select("""
             SELECT student_id AS studentId, COUNT(*) AS cnt FROM offer
-             WHERE round_no = #{round} AND status = 'CONFIRMED'
+             WHERE round_no <= #{round} AND status = 'CONFIRMED'
              GROUP BY student_id HAVING COUNT(*) > 1
             """)
     java.util.List<java.util.Map<String, Object>> duplicateConfirmed(@Param("round") Integer round);
+
+    /** 某学生本轮是否报过某个实训室（室内调剂的第一优先级校验） */
+    @Select("""
+            SELECT COUNT(*) FROM application a
+              JOIN application_item ai ON ai.application_id = a.id
+             WHERE a.student_id = #{studentId} AND a.round_no = #{round}
+               AND a.status = 'SUBMITTED' AND ai.lab_id = #{labId}
+            """)
+    int countStudentAppliedLab(@Param("studentId") Long studentId,
+                               @Param("labId") Long labId,
+                               @Param("round") Integer round);
 
     /** 当前最后一个活动轮次（OPEN 或 CLOSED 的最大轮次），用来判断是不是最终公示 */
     @Select("""

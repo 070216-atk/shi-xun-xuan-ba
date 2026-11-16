@@ -65,12 +65,24 @@ Copy-Item -Path (Join-Path $dist '*') -Destination $staticDir -Recurse -Force
 
 # ---------- 3. 打包后端 ----------
 Write-Host '[3/5] 打包后端...' -ForegroundColor Yellow
+# application-local.yml 里是本机的数据库密码 / JWT 密钥，绝不能打进发布包。
+# mvn clean 会清空 target，所以备份放在项目根目录，打完再挪回去。
+$localYml = Join-Path $backend 'src\main\resources\application-local.yml'
+$localBak = Join-Path $root '.application-local.yml.bak'
+$hasLocal = Test-Path $localYml
+if ($hasLocal) {
+    Write-Host '      暂时移出 application-local.yml（避免本地密码进 jar）' -ForegroundColor DarkGray
+    Move-Item -LiteralPath $localYml -Destination $localBak -Force
+}
 Push-Location $backend
 try {
     & $mvn -DskipTests clean package
     if ($LASTEXITCODE -ne 0) { throw 'mvn package 失败' }
 } finally {
     Pop-Location
+    if ($hasLocal -and (Test-Path $localBak)) {
+        Move-Item -LiteralPath $localBak -Destination $localYml -Force
+    }
 }
 
 $jar = Get-ChildItem -Path (Join-Path $backend 'target') -Filter 'selection-*.jar' |

@@ -21,14 +21,15 @@ export const store = reactive({
   labLists: {},       // 实训室id -> { admit, waitlist, adjust }
   offers: {},         // 学号 -> [{ offerId, labId, mentorId, mentorName, status }]
   finalResults: {},   // 学号 -> 实训室id
-  adjustLog: [],
-  talkRecords: [],
   publicity: { published: false, start: null, end: null, ended: false },
+  objections: [],     // 管理端：当前公示未处理的异议
   notifications: [],
   quotas: [],         // 管理端：/admin/quotas 的原样数据
   applicants: [],     // 导师端：本室报名学生（后端原样）
   interviewList: [],  // 导师端：本室面试名单（入围者的并集）
   adjustInbox: [],    // 导师端：别人指定调剂给我的学生
+  transferInbox: [],  // 导师端：学生申请转到我的名下的转组申请
+  transfers: [],      // 学生端：本人本轮的转组申请（含历史）
   pool: { vacancies: [], candidates: [] },
   results: [],        // 管理端：已确认的最终名单
   publicityList: [],  // 公示名单（公开接口）
@@ -142,6 +143,11 @@ export function remainingQuota(labId) {
   return l ? l.quota || 0 : 0
 }
 
+/** 学号 -> 姓名（索引里没有就原样返回，绝不显示数字 id） */
+export function nameByCode(code) {
+  return codeToName[code] || code
+}
+
 // ---------------- 登录 ----------------
 
 function toUser(u) {
@@ -210,6 +216,9 @@ export function logout() {
   store.quotas = []
   store.applicants = []
   store.results = []
+  store.adjustInbox = []
+  store.transferInbox = []
+  store.transfers = []
   store.pool = { vacancies: [], candidates: [] }
 }
 
@@ -217,11 +226,13 @@ export function logout() {
 
 export async function loadStudent() {
   const sid = store.user.id
-  const [app, offers, st] = await Promise.all([
+  const [app, offers, st, transfers] = await Promise.all([
     api.getMyApplication(store.round),
     api.getMyOffers(store.round),
-    api.getMyStatus(store.round).catch(() => null)
+    api.getMyStatus(store.round).catch(() => null),
+    api.getMyTransfers(store.round).catch(() => [])
   ])
+  store.transfers = transfers || []
   // 后端的状态是唯一口径，页面直接用，不再在前端重算
   store.studentStatus = st
   if (st) {
@@ -307,6 +318,21 @@ export async function confirmOffer(offerId) {
   return r
 }
 
+// ---------------- 跨室转组（学生端发起） ----------------
+
+/** 已录取但不满意：申请转到别的实训室的某位导师 */
+export async function applyTransfer(targetLabId, targetMentorId, reason) {
+  const r = await api.submitTransfer({ round: store.round, targetLabId, targetMentorId, reason })
+  await loadStudent()
+  return r
+}
+
+/** 撤销还没被导师处理的申请 */
+export async function cancelTransfer(id) {
+  await api.cancelTransfer(id)
+  await loadStudent()
+}
+
 export function studentStatus(studentId) {
   if (store.publicity.ended && store.finalResults[studentId]) return '正式入组'
   if (store.finalResults[studentId]) return '已录取'
@@ -323,22 +349,27 @@ export function studentStatus(studentId) {
 // ---------------- 导师端 ----------------
 
 export async function loadTeacher() {
-  const [list, lists, interviewList, inbox] = await Promise.all([
+  const [list, lists, interviewList, inbox, transferInbox] = await Promise.all([
     api.getApplicants(store.round),
     api.getTeacherLists(store.round),
     api.getInterviewList(store.round).catch(() => []),
-    api.getAdjustInbox(store.round).catch(() => [])
+    api.getAdjustInbox(store.round).catch(() => []),
+    api.getTransferInbox(store.round).catch(() => [])
   ])
   store.applicants = list
   // 面试名单（入围者的并集）：评分页和名单页只认这批人
   store.interviewList = interviewList || []
   // 别人指定调剂给我的学生：需要我接收或拒绝
   store.adjustInbox = inbox || []
+  // 学生主动申请的跨室转组：约谈后接收或拒绝
+  store.transferInbox = transferInbox || []
+  // 面试名单 / 两个收件箱里的学生也要建 学号↔id 映射，
+  // 否则名单页和撤销录取按学号查 id 会查不到（只索引报名列表是不够的）
   indexStudents(
-    list.map((a) => ({
+    [...(list || []), ...store.interviewList, ...store.adjustInbox, ...store.transferInbox].map((a) => ({
       studentId: a.studentId,
-      code: a.code,
-      realName: a.realName,
+      code: a.code || a.studentCode,
+      realName: a.realName || a.studentName,
       className: a.className
     }))
   )
@@ -369,16 +400,34 @@ export async function loadTeacher() {
   const pick = (arr) => (arr || []).map((o) => idToCode[o.studentId] || String(o.studentId))
   const mine = lists.mentorId
   if (mine) {
+    // 名单里可能有"没报过本室"的学生（跨室转组接收、学院统筹安置），
+    // 他们不在报名列表里，这里补建映射，否则页面只能显示学生数字 id
+    indexStudents(
+      [...(lists.admitted || []), ...(lists.waitlist || []), ...(lists.adjustCandidates || [])]
+        .map((o) => ({
+          studentId: o.studentId,
+          code: o.studentCode || o.code,
+          realName: o.studentName || o.realName,
+          className: o.className
+        }))
+        .filter((x) => x.code)
+    )
     // 记录每条拟录取的状态，导师端要据此显示"已确认/待确认"和撤销按钮
     const admitStatus = {}
     for (const o of lists.admitted || []) {
       admitStatus[idToCode[o.studentId] || String(o.studentId)] = o.status
     }
+    // 内部调剂的目标导师：保存下来，重新打开名单页时下拉框才能回显
+    const adjustTargets = {}
+    for (const o of lists.adjustCandidates || []) {
+      adjustTargets[idToCode[o.studentId] || String(o.studentId)] = o.targetMentorId || null
+    }
     store.labLists[labId] = {
       admit: pick(lists.admitted),
       waitlist: pick(lists.waitlist),
       adjust: pick(lists.adjustCandidates),
-      admitStatus
+      admitStatus,
+      adjustTargets
     }
   }
 }
@@ -422,6 +471,22 @@ export async function rejectAdjust(offerId, reason) {
   return r
 }
 
+// ---------------- 跨室转组（导师端处理） ----------------
+
+/** 约谈后接收：原去向作废，学生直接成为我的已确认录取 */
+export async function acceptTransfer(id, interviewNote) {
+  const r = await api.acceptTransfer(id, { interviewNote }, store.round)
+  await loadTeacher()
+  return r
+}
+
+/** 拒绝转组：学生保留原去向 */
+export async function rejectTransfer(id, reason, interviewNote) {
+  const r = await api.rejectTransfer(id, { reason, interviewNote }, store.round)
+  await loadTeacher()
+  return r
+}
+
 // ---------------- 管理端 ----------------
 
 /**
@@ -436,15 +501,17 @@ function assertRoundOpen() {
 }
 
 export async function loadAdmin() {
-  const [qs, list, pool, db, results] = await Promise.all([
+  const [qs, list, pool, db, results, trs] = await Promise.all([
     api.getQuotas(store.round),
     api.getStudents(),
     api.getAdjustPool(store.round),
     api.getDashboard(store.round),
-    api.getResults(store.round)
+    api.getResults(store.round),
+    api.getAdminTransfers(store.round).catch(() => [])
   ])
   store.quotas = qs
   store.results = results || []
+  store.transfers = trs || []
   indexStudents(list.map((s) => ({ studentId: s.studentId, code: s.code, realName: s.realName, className: s.className })))
   store.dashboard = db
   store.pool = pool
@@ -482,19 +549,21 @@ export async function loadAdmin() {
         start: fmt(p.startAt),
         ended: p.status === 'ENDED'
       }
+    } else {
+      // 换到还没公示的轮次时必须清掉上一轮的状态，否则切轮后仍显示「公示中」
+      store.publicity = { published: false, start: null, end: null, ended: false }
     }
   } catch (e) {
-    /* 没有公示记录就保持默认 */
+    store.publicity = { published: false, start: null, end: null, ended: false }
   }
 }
 
-export async function doAdjust(level, mentorId, studentCodes, conclusion) {
+export async function doAdjust(level, mentorId, studentCodes) {
   assertRoundOpen()
   const studentIds = studentCodes.map((c) => codeToId[c])
-  const body = { round: store.round, mentorId, studentIds, conclusion }
+  const body = { round: store.round, mentorId, studentIds }
   if (level === 1) await api.adjustInternal(body)
-  else if (level === 2) await api.adjustCross(body)
-  else await api.adjustTalk(body)
+  else await api.adjustCross(body)
   await loadAdmin()
 }
 
@@ -557,18 +626,48 @@ export async function endPublicity() {
   store.publicity.ended = true
 }
 
-export async function markObjection(reason) {
-  await api.addObjection({ round: store.round, reason })
+export async function markObjection(studentCode, reason) {
+  await api.addObjection({ round: store.round, studentCode, reason })
+}
+
+/** 当前公示中还没处理的异议（后端持久化在操作日志里） */
+export async function loadObjections() {
+  const list = await api.getObjections(store.round)
+  store.objections = list || []
+  return store.objections
 }
 
 export async function resolveObjections() {
   await api.resolveObjections(store.round)
+  await loadObjections()
+}
+
+// ---------------- 站内通知 ----------------
+
+/** 拉自己的通知（登录后调用；后端最多返回 50 条） */
+export async function loadNotifications() {
+  if (!store.user) return []
+  const list = await api.getMyNotifications().catch(() => [])
+  store.notifications = (list || []).map((n) => ({
+    id: n.id,
+    time: fmt(n.createdAt),
+    title: n.title || '',
+    text: n.content || '',
+    read: !!n.isRead
+  }))
+  return store.notifications
+}
+
+/** 打开通知面板时把全部标为已读 */
+export async function markNotificationsRead() {
+  store.notifications.forEach((n) => { n.read = true })
+  await api.markNotificationsRead().catch(() => {})
 }
 
 export { fmt }
 
 
-// ---------------- 收口安置 ----------------
+// ---------------- 安置检查 ----------------
 
 /** 拉取缺口清单：谁还没着落、还有多少空位 */
 export async function loadPlacement() {
@@ -576,15 +675,7 @@ export async function loadPlacement() {
   return store.placement
 }
 
-/** 一键收口：把没着落的人全部安排掉 */
-export async function finalizePlacement(includeRefusers) {
-  const r = await api.finalizePlacement(store.round, includeRefusers)
-  await loadAdmin()
-  await loadPlacement()
-  return r
-}
-
-/** 收口校验 */
+/** 安置校验 */
 export function verifyPlacement() {
   return api.verifyPlacement(store.round)
 }
@@ -650,11 +741,3 @@ export async function uninviteStudent(code) {
   return r
 }
 
-// ---------------- 自动录取 ----------------
-
-/** sortBy: 'score' 按面试总分 | 'manual' 按导师已有排序 */
-export async function autoAdmit(sortBy = 'score') {
-  const r = await api.autoAdmit({ round: store.round, sortBy })
-  await loadTeacher()
-  return r
-}

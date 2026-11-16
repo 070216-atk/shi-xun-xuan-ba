@@ -19,6 +19,10 @@
 
     <div v-if="offers.length" class="card">
       <div class="page-title">录取意向</div>
+      <el-alert v-if="!canAct && pendingAdmitted.length" type="info" :closable="false" style="margin-bottom:12px"
+        :title="publicityLocked
+          ? '最终名单已经公示，去向已锁定，不能再确认或撤销。'
+          : `确认/撤销只在「拟录取与学生确认」或「分轮补录」阶段开放（当前阶段：${currentStage?.name || '未开放'}）。`" />
       <el-alert v-if="pendingAdmitted.length > 1" type="warning" :closable="false" style="margin-bottom:12px"
         title="你收到 2 个及以上拟录取意向，请在截止时间前自主选择唯一去向；逾期未确认视为放弃，名额按递补顺位补充。" />
       <el-alert v-else-if="pendingAdmitted.length === 1" type="success" :closable="false" style="margin-bottom:12px"
@@ -35,15 +39,66 @@
           <div v-if="isPlaced(o)" class="muted" style="margin-top:4px;font-size:12px">{{ o.remark }}</div>
         </div>
         <div v-if="o.status === 'pending' && o.type === 'ADMITTED'">
-          <el-button type="primary" size="small" :loading="confirming" @click="doConfirm(o)">
+          <el-button type="primary" size="small" :loading="confirming" :disabled="!canAct" @click="doConfirm(o)">
             {{ pendingAdmitted.length > 1 ? '选择该去向' : '确认该去向' }}
           </el-button>
         </div>
         <div v-else-if="o.status === 'confirmed' && o.type === 'ADMITTED'">
-          <el-button size="small" type="warning" plain :loading="releasing" @click="doRelease(o)">撤销确认</el-button>
+          <el-button size="small" type="warning" plain :loading="releasing" :disabled="!canAct" @click="doRelease(o)">撤销确认</el-button>
+          <el-button v-if="store.currentStage === 7" size="small" type="primary" plain
+            :disabled="!!pendingTransfer" @click="openTransfer(o)">申请跨室转组</el-button>
         </div>
       </div>
     </div>
+
+    <div v-if="transfers.length" class="card">
+      <div class="page-title">跨室转组申请</div>
+      <p class="muted">
+        已录取后对去向不满意，可以申请转到其他实训室；目标导师线下约谈后决定是否接收。
+        接收后原去向立即解除，你直接变成新导师的已确认录取。
+      </p>
+      <div v-for="t in transfers" :key="t.id" class="offer-row">
+        <div>
+          <b>{{ t.targetLabName }}</b>
+          <span class="muted"> · 导师 {{ t.targetMentorName }}</span>
+          <el-tag :type="transferTag(t.status).type" size="small" style="margin-left:8px">{{ transferTag(t.status).label }}</el-tag>
+          <div class="muted" style="font-size:12px;margin-top:4px">
+            原去向：{{ t.fromLabName }} · {{ t.fromMentorName }}
+          </div>
+          <div class="muted" style="font-size:12px">申请理由：{{ t.reason }}</div>
+          <div v-if="t.interviewNote" class="muted" style="font-size:12px">约谈记录：{{ t.interviewNote }}</div>
+          <div v-if="t.rejectReason" style="font-size:12px;color:#c45656">拒绝原因：{{ t.rejectReason }}</div>
+        </div>
+        <el-button v-if="t.status === 'PENDING'" size="small" plain @click="doCancelTransfer(t)">撤销申请</el-button>
+      </div>
+    </div>
+
+    <el-dialog v-model="transferDialog" title="申请跨室转组" width="520px">
+      <p class="muted" style="margin-top:0">当前去向：{{ transferFromText }}</p>
+      <el-form label-width="88px">
+        <el-form-item label="目标实训室">
+          <el-select v-model="transferForm.labId" placeholder="只能选其他实训室" style="width:100%"
+            @change="transferForm.mentorId = null">
+            <el-option v-for="l in transferLabs" :key="l.id" :value="l.id" :label="l.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="目标导师">
+          <el-select v-model="transferForm.mentorId" :disabled="!transferForm.labId"
+            placeholder="选择该实训室的导师" style="width:100%">
+            <el-option v-for="m in transferMentors" :key="m.id" :value="m.id"
+              :label="`${m.name}（名额 ${m.quota}）`" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="申请理由">
+          <el-input v-model="transferForm.reason" type="textarea" :rows="3" maxlength="200" show-word-limit
+            placeholder="为什么想换实训室（导师约谈时会看，200 字以内）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="transferDialog = false">取消</el-button>
+        <el-button type="primary" :loading="transferSaving" @click="doApplyTransfer">提交申请</el-button>
+      </template>
+    </el-dialog>
 
     <div class="card">
       <div class="page-title">我的填报记录</div>
@@ -57,16 +112,17 @@
         </p>
       </template>
       <el-empty v-else :description="alreadyAdmitted ? '你已被录取，后续轮次无需填报' : '本轮尚未填报'" :image-size="60">
-        <el-button v-if="store.currentStage === 3 && !alreadyAdmitted" type="primary" @click="$router.push('/apply')">去填报</el-button>
+        <el-button v-if="[3, 6].includes(store.currentStage) && !alreadyAdmitted" type="primary"
+          @click="$router.push('/apply')">去填报</el-button>
       </el-empty>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { stages, store, labById, studentStatus, loadStudent, confirmOffer, releaseOffer } from '../../store'
+import { stages, store, labs, labById, studentStatus, loadStudent, confirmOffer, releaseOffer, applyTransfer, cancelTransfer } from '../../store'
 
 onMounted(() => {
   if (store.user?.role === 'student') loadStudent().catch(e => ElMessage.error(e.message))
@@ -77,6 +133,12 @@ const status = computed(() =>
   store.studentStatus?.statusText || (store.user ? studentStatus(store.user.id) : ''))
 /** 后端状态文案在公示期间是"…公示中"，这里据此给状态加个醒目标记 */
 const inPublicity = computed(() => (status.value || '').includes('公示中'))
+/** 公示发布/结束后去向锁定，学生不能再确认或撤销 */
+const publicityLocked = computed(() =>
+  ['PUBLISHED', 'ENDED'].includes(store.studentStatus?.publicity))
+/** 确认/撤销只在阶段 5、6 且未公示时开放（与后端校验保持一致） */
+const canAct = computed(() =>
+  [5, 6].includes(store.currentStage) && !publicityLocked.value)
 const offers = computed(() => store.offers[store.user?.id] || [])
 /** 待确认的拟录取（递补/调剂候选不算，它们不需要学生操作） */
 const pendingAdmitted = computed(() =>
@@ -86,13 +148,13 @@ const alreadyAdmitted = computed(() => ['ADMITTED', 'CONFIRMED'].includes(store.
 
 const needAction = computed(() => {
   if (alreadyAdmitted.value) return false
-  if (store.currentStage === 3 && !app.value) return true
+  if ([3, 6].includes(store.currentStage) && !app.value) return true
   // 只要还有待确认的拟录取，就需要学生操作（1 个也要确认，不能只靠自动结算）
-  if (pendingAdmitted.value.length > 0) return true
+  if (pendingAdmitted.value.length > 0 && canAct.value) return true
   return false
 })
 const nextAction = computed(() => {
-  if (store.currentStage === 3 && !app.value) return '尽快完成意向填报'
+  if ([3, 6].includes(store.currentStage) && !app.value) return '尽快完成意向填报'
   if (pendingAdmitted.value.length > 1) return '在拟录取意向中选择唯一去向'
   if (pendingAdmitted.value.length === 1) return '确认你的录取去向'
   return '等待学院通知'
@@ -129,6 +191,82 @@ function offerTag(s) {
 const confirming = ref(false)
 const releasing = ref(false)
 
+// ---------------- 跨室转组 ----------------
+
+const transfers = computed(() => store.transfers || [])
+/** 同一时间只能有一个待处理的转组申请 */
+const pendingTransfer = computed(() => transfers.value.find(t => t.status === 'PENDING'))
+const canApplyTransfer = computed(() => store.currentStage === 7 && !publicityLocked.value)
+
+const transferDialog = ref(false)
+const transferSaving = ref(false)
+const transferOffer = ref(null)
+const transferForm = reactive({ labId: null, mentorId: null, reason: '' })
+
+/** 目标实训室列表里排除现在的这个 */
+const transferLabs = computed(() =>
+  labs.filter(l => String(l.id) !== String(transferOffer.value?.labId)))
+const transferMentors = computed(() => labById(transferForm.labId)?.mentors || [])
+const transferFromText = computed(() => {
+  const o = transferOffer.value
+  if (!o) return ''
+  return `${o.labName || labName(o.labId)} · ${o.mentorName || ''}`
+})
+
+function openTransfer(o) {
+  if (pendingTransfer.value) {
+    ElMessage.warning('你已经有一个待处理的转组申请，请等待导师处理或先撤销')
+    return
+  }
+  if (!canApplyTransfer.value) {
+    ElMessage.warning('跨室转组只在「统筹调剂」阶段开放')
+    return
+  }
+  transferOffer.value = o
+  transferForm.labId = null
+  transferForm.mentorId = null
+  transferForm.reason = ''
+  transferDialog.value = true
+}
+
+async function doApplyTransfer() {
+  if (!transferForm.labId) return ElMessage.warning('请选择目标实训室')
+  if (!transferForm.mentorId) return ElMessage.warning('请选择目标导师')
+  if (!transferForm.reason.trim()) return ElMessage.warning('请填写申请理由')
+  transferSaving.value = true
+  try {
+    await applyTransfer(transferForm.labId, transferForm.mentorId, transferForm.reason.trim())
+    ElMessage.success('已提交，等待目标导师约谈处理')
+    transferDialog.value = false
+  } catch (e) {
+    ElMessage.error(e.message || '提交失败')
+  } finally {
+    transferSaving.value = false
+  }
+}
+
+async function doCancelTransfer(t) {
+  try {
+    await ElMessageBox.confirm(`撤销对「${t.targetLabName}」的转组申请？`, '撤销申请',
+      { confirmButtonText: '撤销', cancelButtonText: '再想想', type: 'warning' })
+  } catch { return }
+  try {
+    await cancelTransfer(t.id)
+    ElMessage.success('已撤销申请')
+  } catch (e) {
+    ElMessage.error(e.message || '撤销失败')
+  }
+}
+
+function transferTag(s) {
+  return {
+    PENDING: { type: 'warning', label: '等待导师处理' },
+    ACCEPTED: { type: 'success', label: '已通过' },
+    REJECTED: { type: 'danger', label: '未通过' },
+    CANCELED: { type: 'info', label: '已撤销' }
+  }[s] || { type: 'info', label: s }
+}
+
 async function doRelease(o) {
   try {
     await ElMessageBox.confirm(
@@ -157,7 +295,6 @@ async function doConfirm(o) {
   confirming.value = true
   try {
     await confirmOffer(o.offerId)
-    store.notifications.unshift({ time: '刚刚', text: `你已确认去向：${o.labName || labName(o.labId)}`, read: false })
     ElMessage.success('确认成功')
   } catch (e) {
     ElMessage.error(e.message || '确认失败')

@@ -16,7 +16,7 @@
         <el-table-column label="学生展示（项目/作品/经历）" min-width="200">
           <template #default="{ row }">
             <el-input v-model="draft(row.code).showcase" size="small" type="textarea" :rows="2"
-              placeholder="学生现场展示的内容" />
+              maxlength="1000" show-word-limit placeholder="学生现场展示的内容" />
           </template>
         </el-table-column>
         <el-table-column label="评语" min-width="180">
@@ -36,7 +36,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, onMounted } from 'vue'
+import { computed, reactive, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { store, labById, loadTeacher, saveScore } from '../../store'
 
@@ -85,4 +85,10 @@ async function save(row) {
 }
 
 onMounted(() => loadTeacher().catch(e => ElMessage.error(e.message)))
+
+// 切换轮次后草稿要清空：草稿是按学号缓存的，不清会把上一轮的分数带到新一轮
+watch(() => store.round, async () => {
+  Object.keys(drafts).forEach(k => delete drafts[k])
+  await loadTeacher().catch(e => ElMessage.error(e.message))
+})
 </script>

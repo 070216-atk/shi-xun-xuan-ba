@@ -32,8 +32,9 @@
       <router-view />
     </main>
     <el-dialog v-model="showNotif" title="站内通知" width="90%" style="max-width:480px">
-      <div v-for="(n, i) in store.notifications" :key="i" style="padding:8px 0;border-bottom:1px solid #eee">
+      <div v-for="(n, i) in store.notifications" :key="n.id || i" style="padding:8px 0;border-bottom:1px solid #eee">
         <div class="muted">{{ n.time }}</div>
+        <div v-if="n.title" style="font-weight:600">{{ n.title }}</div>
         <div>{{ n.text }}</div>
       </div>
       <el-empty v-if="!store.notifications.length" description="暂无通知" :image-size="60" />
@@ -42,19 +43,24 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { store, logout, setRound } from '../store'
+import { store, logout, setRound, loadNotifications, markNotificationsRead } from '../store'
 
 const router = useRouter()
 const route = useRoute()
 const showNotif = ref(false)
 const unread = computed(() => store.notifications.filter(n => !n.read).length)
 
+// 登录后（或切账号后）把服务端通知拉下来，不再用前端假数据
+watch(() => store.user?.dbId, (id) => {
+  if (id) loadNotifications().catch(() => {})
+}, { immediate: true })
+
 function openNotif() {
   showNotif.value = true
-  store.notifications.forEach(n => { n.read = true })
+  markNotificationsRead()
 }
 const roleName = computed(() => ({ student: '学生', teacher: '导师', admin: '学院管理员' }[store.user?.role] || ''))
 const roundText = (s) => ({ OPEN: '进行中', CLOSED: '已结束', PLANNING: '未开启' }[s] || s)

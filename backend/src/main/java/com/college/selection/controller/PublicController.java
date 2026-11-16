@@ -37,6 +37,7 @@ public class PublicController {
     /**
      * 公示状态 + 最终名单。
      * 只有公示已发布（PUBLISHED）或已结束（ENDED）才返回名单，否则 data 为 null。
+     * 名单里的学号做脱敏：公网可访问，不能把完整学号挂出去。
      */
     @GetMapping("/publicity")
     public Result<Map<String, Object>> publicity(@RequestParam(defaultValue = "1") Integer round) {
@@ -44,11 +45,25 @@ public class PublicController {
         if (p == null || (!"PUBLISHED".equals(p.status) && !"ENDED".equals(p.status))) {
             return Result.ok(null);
         }
+        List<Map<String, Object>> list = adminService.confirmedResults(round);
+        for (Map<String, Object> row : list) {
+            row.put("code", maskCode(row.get("code")));
+        }
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("status", p.status);
         m.put("startAt", p.startAt);
         m.put("endAt", p.endAt);
-        m.put("list", adminService.confirmedResults(round));
+        m.put("list", list);
         return Result.ok(m);
+    }
+
+    /** 20230101 → 2023****1：前后留一点，中间打码 */
+    private String maskCode(Object code) {
+        if (code == null) return null;
+        String s = String.valueOf(code);
+        if (s.length() <= 4) {
+            return "****";
+        }
+        return s.substring(0, 4) + "****" + s.substring(s.length() - 1);
     }
 }

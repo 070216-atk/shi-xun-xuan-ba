@@ -64,6 +64,9 @@ const open = ref(false)
 const accounts = [
   { u: 'student01', role: '学生', who: '李明' },
   { u: 'student02', role: '学生', who: '王芳' },
+  { u: 'student03', role: '学生', who: '陈晨' },
+  { u: 'student04', role: '学生', who: '赵磊' },
+  { u: 'student05', role: '学生', who: '孙悦' },
   { u: 'student06', role: '学生', who: '周航' },
   { u: 'student07', role: '学生', who: '吴迪' },
   { u: 'student08', role: '学生', who: '郑可' },
@@ -73,7 +76,9 @@ const accounts = [
   { u: 'student12', role: '学生', who: '许晴' },
   { u: 'student13', role: '学生', who: '高远' },
   { u: 'teacher01', role: '导师', who: '刘冠军 · 202 室' },
-  { u: 'teacher03', role: '导师', who: '高璇 · 404 室' }
+  { u: 'teacher02', role: '导师', who: '吴国新 · 204 室' },
+  { u: 'teacher03', role: '导师', who: '高璇 · 404 室' },
+  { u: 'teacher04', role: '导师', who: '佳浩 · 202 室' }
 ]
 
 async function quickLogin(d) {

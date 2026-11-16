@@ -29,6 +29,8 @@ public class AdjustPoolVO {
         public String className;
         public Boolean adjustInLab;
         public Boolean adjustCross;
+        /** 本轮报过的实训室 id，逗号分隔（室内调剂的导师下拉据此过滤） */
+        public String labIds;
         /** 当前手里最好的意向类型，没有则为 null */
         public String offerType;
         public String offerStatus;

@@ -92,7 +92,13 @@ const obeyInner = ref(true)
 const obeyCross = ref(true)
 
 watch(existing, (v) => {
-  if (!v) return
+  if (!v) {
+    // 换到还没填报的轮次时要把表单清空，否则会残留上一轮的意向
+    selected.value = ['', '', '']
+    obeyInner.value = true
+    obeyCross.value = true
+    return
+  }
   const keys = (v.labIds || []).map((lid, i) => `${lid}:${(v.mentorIds || [])[i]}`)
   selected.value = [keys[0] || '', keys[1] || '', keys[2] || '']
   obeyInner.value = !!v.obeyInner
@@ -142,7 +148,6 @@ async function onSubmit() {
   saving.value = true
   try {
     await submitApplication(items, obeyInner.value, obeyCross.value)
-    store.notifications.unshift({ time: '刚刚', text: `第${store.round}轮意向已提交成功`, read: false })
     ElMessage.success('提交成功')
   } catch (e) {
     ElMessage.error(e.message || '提交失败')

@@ -7,5 +7,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class ObjectionReq {
 
     public Integer round;
+    /** 被提出异议的学生学号（可空，允许只写原因） */
+    public String studentCode;
     public String reason;
 }

@@ -9,11 +9,14 @@ import com.college.selection.entity.Offer;
 import com.college.selection.entity.Publicity;
 import com.college.selection.entity.Stage;
 import com.college.selection.entity.SysUser;
+import com.college.selection.entity.TransferRequest;
 import com.college.selection.mapper.AdminMapper;
 import com.college.selection.mapper.MentorMapper;
+import com.college.selection.mapper.NotificationMapper;
 import com.college.selection.mapper.OfferMapper;
 import com.college.selection.mapper.OperationLogMapper;
 import com.college.selection.mapper.SysUserMapper;
+import com.college.selection.mapper.TransferRequestMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +31,8 @@ public class AdminService {
 
     /** 统筹调剂对应流程图第 7 个环节 */
     private static final int STAGE_ADJUST = 7;
+    /** 意向填报对应第 3 个环节（报名通道的第一段） */
+    private static final int STAGE_APPLY = 3;
     /** 分轮补录对应第 6 个环节（补录轮开启后直接进入报名） */
     private static final int STAGE_REFILL = 6;
     /** 拟录取与学生确认对应第 5 个环节 */
@@ -39,19 +44,25 @@ public class AdminService {
     private final SysUserMapper userMapper;
     private final StageService stageService;
     private final OperationLogMapper logMapper;
+    private final NotificationMapper notificationMapper;
+    private final TransferRequestMapper transferMapper;
 
     public AdminService(AdminMapper adminMapper,
                         OfferMapper offerMapper,
                         MentorMapper mentorMapper,
                         SysUserMapper userMapper,
                         StageService stageService,
-                        OperationLogMapper logMapper) {
+                        OperationLogMapper logMapper,
+                        NotificationMapper notificationMapper,
+                        TransferRequestMapper transferMapper) {
         this.adminMapper = adminMapper;
         this.offerMapper = offerMapper;
         this.mentorMapper = mentorMapper;
         this.userMapper = userMapper;
         this.stageService = stageService;
         this.logMapper = logMapper;
+        this.notificationMapper = notificationMapper;
+        this.transferMapper = transferMapper;
     }
 
     private SysUser requireAdmin(Long adminId) {
@@ -87,6 +98,10 @@ public class AdminService {
         }
         String remark = String.format("公布第 %d 轮剩余名额，共 %d 个", round, total);
         logMapper.insert(adminId, "ADMIN", "PUBLISH_QUOTA", "ROUND", round.longValue(), remark);
+        if (total > 0) {
+            notificationMapper.insertForAllStudents("QUOTA", "剩余名额公布",
+                    String.format("第 %d 轮目前还有 %d 个名额，请关注补录安排", round, total));
+        }
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("round", round);
@@ -108,6 +123,15 @@ public class AdminService {
     }
 
     /**
+     * 本轮学生自己发起的跨室转组申请（已录取但去向不满意）。
+     * 管理端只在 ② 跨室调剂的下面展示，接收/拒绝由目标导师处理。
+     */
+    public List<TransferRequest> transfers(Long adminId, Integer round) {
+        requireAdmin(adminId);
+        return transferMapper.findByRound(round);
+    }
+
+    /**
      * 第一优先级：实训室内部调剂。
      * 把学生安排到本室的某个导师，直接置为已确认（统筹调剂不需要学生再确认）。
      */
@@ -115,7 +139,24 @@ public class AdminService {
     public void adjustInternal(Long adminId, Integer round, Long mentorId, List<Long> studentIds) {
         requireAdmin(adminId);
         stageService.assertOpen(round, STAGE_ADJUST);
-        place(round, mentorId, studentIds, "统筹调剂-室内调剂");
+        // 室内调剂的第一优先级含义是"在这个学生报过的实训室里换导师"，
+        // 所以本轮报过名的学生必须报过目标导师所在的实训室，否则属于跨室调剂
+        if (mentorId == null || studentIds == null || studentIds.isEmpty()) {
+            throw new BizException(2008, "必须指定导师和学生");
+        }
+        Mentor m = mentorMapper.findById(mentorId);
+        if (m == null) {
+            throw new BizException(2008, "导师不存在：" + mentorId);
+        }
+        for (Long sid : studentIds) {
+            // 室内调剂的含义是"在他本轮报过的实训室里换导师"，
+            // 没报过这个室（包括本轮根本没报名的）都不能走室内
+            if (adminMapper.countStudentAppliedLab(sid, m.labId, round) == 0) {
+                throw new BizException(2008,
+                        who(sid) + " 本轮没有报过 " + m.name + " 所在的实训室，不属于室内调剂，请走跨室调剂或指定安置");
+            }
+        }
+        place(adminId, round, mentorId, studentIds, "统筹调剂-室内调剂", "ADJUST_INTERNAL");
     }
 
     /**
@@ -126,35 +167,37 @@ public class AdminService {
     public void adjustCross(Long adminId, Integer round, Long mentorId, List<Long> studentIds) {
         requireAdmin(adminId);
         stageService.assertOpen(round, STAGE_ADJUST);
-        int pending = adminMapper.countPendingInternal(round);
+        if (mentorId == null || studentIds == null || studentIds.isEmpty()) {
+            throw new BizException(2008, "必须指定导师和学生");
+        }
+        // 只拦"室内还放得下"的人：报过的实训室全满的学生再卡着不走，跨室就永远做不了
+        int pending = adminMapper.countPlaceableInternal(round);
         if (pending > 0) {
             throw new BizException(ErrorCode.ADJUST_ORDER_WRONG,
-                    "还有 " + pending + " 名服从室内调剂的学生没有着落，不能跳过第一优先级直接做跨室调剂");
+                    "还有 " + pending + " 名服从室内调剂的学生在本室还有空位，不能跳过第一优先级直接做跨室调剂");
         }
-        place(round, mentorId, studentIds, "统筹调剂-跨室调剂");
-    }
-
-    /**
-     * 第三优先级：约谈未服从调剂的学生并作最终安置。
-     * 必须前两级都已完成。
-     */
-    @Transactional
-    public void adjustTalk(Long adminId, Integer round, Long mentorId, Long studentId, String conclusion) {
-        requireAdmin(adminId);
-        stageService.assertOpen(round, STAGE_ADJUST);
-        int pending = adminMapper.countPendingCross(round);
-        if (pending > 0) {
-            throw new BizException(ErrorCode.ADJUST_ORDER_WRONG,
-                    "还有 " + pending + " 名服从跨室调剂的学生没有着落，不能跳过第二优先级直接做约谈安置");
+        // 跨室调剂只对勾选了"服从跨室调剂"的学生有效，不能把人硬塞去没报过、也没同意的实训室；
+        // 另外"跨室"指的是换到别的实训室，学生自己报过的室属于①，不能从这里安排
+        Mentor target = mentorMapper.findById(mentorId);
+        if (target == null) {
+            throw new BizException(2008, "导师不存在：" + mentorId);
         }
-        if (conclusion == null || conclusion.isBlank()) {
-            throw new BizException(2008, "约谈安置必须填写约谈结论");
+        for (Long sid : studentIds) {
+            if (adminMapper.countStudentObeyCross(sid, round) == 0) {
+                throw new BizException(2008,
+                        who(sid) + " 本轮没有勾选「服从跨室调剂」，不能跨室安排，请改用「指定安置」并写明原因");
+            }
+            if (adminMapper.countStudentAppliedLab(sid, target.labId, round) > 0) {
+                throw new BizException(2008,
+                        who(sid) + " 本轮报过 " + target.name + " 所在的实训室，这属于①室内调剂，不能走②跨室");
+            }
         }
-        place(round, mentorId, List.of(studentId), "统筹调剂-约谈：" + conclusion);
+        place(adminId, round, mentorId, studentIds, "统筹调剂-跨室调剂", "ADJUST_CROSS");
     }
 
     /** 把一个或多个学生直接安排给某个导师 */
-    private void place(Integer round, Long mentorId, List<Long> studentIds, String remark) {
+    private void place(Long adminId, Integer round, Long mentorId, List<Long> studentIds,
+                       String remark, String action) {
         if (mentorId == null || studentIds == null || studentIds.isEmpty()) {
             throw new BizException(2008, "必须指定导师和学生");
         }
@@ -195,6 +238,9 @@ public class AdminService {
             offerMapper.updateStatus(o.id, "CONFIRMED", now);
             // 其他意向全部置为放弃，保证"一人一个去向"
             offerMapper.declineOthers(studentId, round, o.id);
+            // 留痕：管理端「统筹调剂」页的 ①② 记录就从这里读
+            logMapper.insertWithState(adminId, "ADMIN", action, "OFFER", o.id, null, "CONFIRMED",
+                    remark + " " + who(studentId) + " → " + mentor.name);
         }
     }
 
@@ -237,7 +283,7 @@ public class AdminService {
      * 导致 currentStage 语义模糊（管理员以为切到了阶段 5，学生端还认为在阶段 3 能填报）。
      */
     @Transactional
-    public Map<String, Object> switchStage(Long adminId, Integer round, Integer stageNo, Integer hours) {
+    public synchronized Map<String, Object> switchStage(Long adminId, Integer round, Integer stageNo, Integer hours) {
         requireAdmin(adminId);
         if (stageNo == null) {
             throw new BizException(2009, "必须指定要切换到的阶段");
@@ -280,8 +326,13 @@ public class AdminService {
         }
 
         List<Long> sids = adminMapper.studentsWithIssuedAdmitted(round);
-        int auto = 0, multi = 0, skipped = 0;
+        int auto = 0, multi = 0, skipped = 0, already = 0;
         for (Long sid : sids) {
+            // 已经确认过去向的学生不再自动确认：否则后面再来一个意向就会变成两条确认
+            if (offerMapper.findConfirmed(sid, round) != null) {
+                already++;
+                continue;
+            }
             int cnt = offerMapper.countAdmittedIssued(sid, round);
             if (cnt == 1) {
                 // 只有一个意向也要先看名额：名额可能被改小过，不能盲目确认
@@ -303,14 +354,15 @@ public class AdminService {
                 multi++;
             }
         }
-        String remark = String.format("结算第 %d 轮：自动确认 %d 人，多意向待学生选择 %d 人，因名额已满暂缓 %d 人",
-                round, auto, multi, skipped);
+        String remark = String.format("结算第 %d 轮：自动确认 %d 人，多意向待学生选择 %d 人，因名额已满暂缓 %d 人，已有确认跳过 %d 人",
+                round, auto, multi, skipped, already);
         logMapper.insert(null, "SYSTEM", "SETTLE_OFFERS", "ROUND", round.longValue(), remark);
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("autoConfirmed", auto);
         m.put("multiChoice", multi);
         m.put("skippedQuotaFull", skipped);
+        m.put("alreadyConfirmed", already);
         return m;
     }
 
@@ -320,7 +372,9 @@ public class AdminService {
         return adminMapper.latestPublicity(round);
     }
 
-    public Publicity publish(Long adminId, Integer round, Integer days) {
+    /** 发布公示。加锁 + 事务：防止连点两次生成两条进行中的公示 */
+    @Transactional
+    public synchronized Publicity publish(Long adminId, Integer round, Integer days) {
         requireAdmin(adminId);
         Publicity last = adminMapper.latestPublicity(round);
         if (last != null && "PUBLISHED".equals(last.status)) {
@@ -334,7 +388,7 @@ public class AdminService {
             int dup = ((List<?>) verify.get("duplicate")).size();
             int over = ((List<?>) verify.get("overQuota")).size();
             throw new BizException(2010,
-                    String.format("还不能公示：还有 %d 人没有实训室、%d 人有重复去向、%d 位导师超录。请先在「收口安置」里处理后重试",
+                    String.format("还不能公示：还有 %d 人没有实训室、%d 人有重复去向、%d 位导师超录。请先在「安置检查」里处理后重试",
                             missing, dup, over));
         }
 
@@ -350,6 +404,11 @@ public class AdminService {
         p.publishedBy = adminId;
         p.publishedAt = now;
         adminMapper.insertPublicity(p);
+
+        logMapper.insert(adminId, "ADMIN", "PUBLISH", "PUBLICITY", p.id,
+                String.format("发布第 %d 轮公示，历时 %d 天", round, d));
+        notificationMapper.insertForAllStudents("PUBLICITY", "最终名单已公示",
+                String.format("第 %d 轮最终名单已公示，可在「录取结果」查看；如有异议请联系学院", round));
         return p;
     }
 
@@ -359,11 +418,15 @@ public class AdminService {
         if (last == null || !"PUBLISHED".equals(last.status)) {
             throw new BizException(2010, "当前没有进行中的公示");
         }
-        if (last.objectionCount != null && last.objectionCount > 0) {
+        // 以日志里的未处理异议为准（objection_count 只是冗余计数）
+        int unresolved = logMapper.unresolvedObjections(last.id).size();
+        if (unresolved > 0) {
             throw new BizException(ErrorCode.PENDING_OBJECTION,
-                    "还有 " + last.objectionCount + " 条异议未处理，不能结束公示");
+                    "还有 " + unresolved + " 条异议未处理，不能结束公示");
         }
         adminMapper.updatePublicity(last.id, "ENDED", LocalDateTime.now());
+        logMapper.insert(adminId, "ADMIN", "PUBLICITY_END", "PUBLICITY", last.id,
+                String.format("第 %d 轮公示结束", round));
     }
 
     // ---------------- 补录轮次 ----------------
@@ -399,7 +462,13 @@ public class AdminService {
 
     // ---------------- 公示异议 ----------------
 
-    public void addObjection(Long adminId, Integer round, String reason) {
+    /**
+     * 登记一条公示异议。
+     * 不新建表：写在 operation_log（action=OBJECTION，remark="学号|原因"），
+     * 这样刷新页面、换台电脑都能看到，处理记录也天然留痕。
+     */
+    @Transactional
+    public void addObjection(Long adminId, Integer round, String studentCode, String reason) {
         requireAdmin(adminId);
         Publicity p = adminMapper.latestPublicity(round);
         if (p == null || !"PUBLISHED".equals(p.status)) {
@@ -408,16 +477,48 @@ public class AdminService {
         if (reason == null || reason.isBlank()) {
             throw new BizException(2012, "异议内容不能为空");
         }
+        String r = reason.trim();
+        if (r.length() > 500) {
+            throw new BizException(2012, "异议内容最多 500 字");
+        }
+        String code = studentCode == null ? "" : studentCode.trim();
+        logMapper.insert(adminId, "ADMIN", "OBJECTION", "PUBLICITY", p.id, code + "|" + r);
         adminMapper.addObjection(p.id);
     }
 
-    /** 处理完异议后清零，清零之后才允许结束公示 */
+    /** 当前公示里还没处理的异议 */
+    public List<Map<String, Object>> objections(Integer round) {
+        Publicity p = adminMapper.latestPublicity(round);
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (p == null) return out;
+        for (Map<String, Object> row : logMapper.unresolvedObjections(p.id)) {
+            String remark = String.valueOf(row.get("remark"));
+            int idx = remark.indexOf('|');
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", row.get("id"));
+            m.put("createdAt", row.get("createdAt"));
+            m.put("operatorName", row.get("operatorName"));
+            m.put("studentCode", idx < 0 ? "" : remark.substring(0, idx));
+            m.put("reason", idx < 0 ? remark : remark.substring(idx + 1));
+            out.add(m);
+        }
+        return out;
+    }
+
+    /** 处理完异议后清零（写一条 OBJECTION_RESOLVE，旧异议不再计入），之后才允许结束公示 */
+    @Transactional
     public void resolveObjections(Long adminId, Integer round) {
         requireAdmin(adminId);
         Publicity p = adminMapper.latestPublicity(round);
         if (p == null) {
             throw new BizException(2010, "还没有公示记录");
         }
+        int pending = logMapper.unresolvedObjections(p.id).size();
+        if (pending == 0) {
+            return;
+        }
+        logMapper.insert(adminId, "ADMIN", "OBJECTION_RESOLVE", "PUBLICITY", p.id,
+                "异议处理完毕，本次清除 " + pending + " 条");
         adminMapper.clearObjections(p.id);
     }
 
@@ -433,14 +534,7 @@ public class AdminService {
         return adminMapper.confirmedResults(round);
     }
 
-    // ---------------- 收口安置（确保每个人都有实训室） ----------------
-
-    private boolean asBool(Object v) {
-        if (v == null) return false;
-        if (v instanceof Boolean) return (Boolean) v;
-        if (v instanceof Number) return ((Number) v).intValue() != 0;
-        return "true".equalsIgnoreCase(v.toString()) || "1".equals(v.toString());
-    }
+    // ---------------- 安置检查（确保每个人都有实训室） ----------------
 
     private Map<Long, Integer> capacityLeft(Integer round) {
         Map<Long, Integer> left = new LinkedHashMap<>();
@@ -461,55 +555,18 @@ public class AdminService {
         return info;
     }
 
-    /** 挑一个还有空位的导师；onlyLabs=true 时只在指定实训室里挑 */
-    private Long pickMentor(Map<Long, Integer> left, List<Map<String, Object>> caps,
-                            java.util.Set<Long> labs, boolean onlyLabs) {
-        for (Map<String, Object> c : caps) {
-            long mid = ((Number) c.get("mentorId")).longValue();
-            long labId = ((Number) c.get("labId")).longValue();
-            if (left.getOrDefault(mid, 0) <= 0) continue;
-            if (onlyLabs && (labs == null || !labs.contains(labId))) continue;
-            return mid;
-        }
-        return null;
-    }
-
-    /** 直接把某个学生落到某个导师名下（已有意向就改状态，没有就新建） */
-    private void placeConfirmed(Long studentId, Long mentorId, Long labId, Integer round,
-                                LocalDateTime now, String remark) {
-        for (Offer o : offerMapper.findByStudent(studentId, round)) {
-            if (o.mentorId.equals(mentorId)
-                    && !"VOID".equals(o.status) && !"DECLINED".equals(o.status)) {
-                offerMapper.updateStatus(o.id, "CONFIRMED", now);
-                offerMapper.expireAllOther(studentId, round, o.id);
-                return;
-            }
-        }
-        Offer o = new Offer();
-        o.studentId = studentId;
-        o.labId = labId;
-        o.mentorId = mentorId;
-        o.roundNo = round;
-        o.type = "ADMITTED";
-        o.rankNo = offerMapper.maxAdmittedRank(mentorId, round) + 1;
-        o.status = "ISSUED";
-        o.issuedAt = now;
-        o.remark = remark;
-        offerMapper.insert(o);
-        offerMapper.updateStatus(o.id, "CONFIRMED", now);
-        offerMapper.expireAllOther(studentId, round, o.id);
-    }
-
     /**
      * 管理员指定安置（约谈后的"同意的去处"）。
      *
-     * 和批量收口的区别：这里是管理员明确指定去哪个导师，并且必须写原因，
+     * 这里是管理员明确指定去哪个导师，并且必须写原因，
      * 结果会直接变成"已确认"，备注写明"学院统筹安置"，学生在自己页面能看到这条说明。
      */
     @Transactional
     public Map<String, Object> assignPlacement(Long adminId, Integer round, Long studentId,
                                                Long mentorId, String reason) {
         requireAdmin(adminId);
+        // 指定安置属于统筹调剂的一部分：还没走到这一步（初选/拟录取/补录都没做完）就不能先把人定下来
+        stageService.assertOpen(round, STAGE_ADJUST);
         Publicity pub = adminMapper.latestPublicity(round);
         if (pub != null && ("PUBLISHED".equals(pub.status) || "ENDED".equals(pub.status))) {
             throw new BizException(2010, "最终名单已经公示，不能再改安置结果；如需调整请先作废公示");
@@ -520,6 +577,9 @@ public class AdminService {
         }
         if (reason == null || reason.isBlank()) {
             throw new BizException(2007, "必须填写安置原因（例如约谈结论），否则学生看不到为什么被安排到这里");
+        }
+        if (reason.length() > 200) {
+            throw new BizException(2007, "安置原因最多 200 字");
         }
         if (!adminMapper.appliedStudentIds(round).contains(studentId)) {
             // 补录全部结束后，没报过名 / 只在往轮报过名的未录取学生也允许管理员统筹安置
@@ -623,10 +683,16 @@ public class AdminService {
     private void promoteNextWaitlist(Long mentorId, Integer round) {
         List<Offer> wl = offerMapper.findWaitlist(mentorId, round);
         if (wl.isEmpty()) return;
+        // 腾出名额 ≠ 还有空位：管理员可能刚把名额调小过
+        Integer quota = offerMapper.lockMentorQuota(mentorId);
+        int used = offerMapper.countAdmittedByMentor(mentorId, round);
+        if (quota == null || used >= quota) return;
         Offer next = wl.get(0);
         offerMapper.promoteToAdmitted(next.id,
                 offerMapper.maxAdmittedRank(mentorId, round) + 1,
                 stageService.getEndAt(round, STAGE_CONFIRM));
+        notificationMapper.insert(next.studentId, "OFFER", "递补成功",
+                "你已从递补名单提升为拟录取，请尽快确认");
     }
 
     /** 收口前的缺口清单：谁还没着落、还有多少空位、够不够 */
@@ -708,147 +774,22 @@ public class AdminService {
 
     /**
      * 报名通道是否已经彻底关闭。
-     * 只认最后一轮，且该轮补录窗口已经结束；否则管理员可能把还能报名的学生提前分配走。
+     *
+     * 报名通道 = 「意向填报」+「分轮补录」两段窗口，只要其中任何一段还没结束，
+     * 学生就还能新报名，管理员不能把没报名的学生提前安排掉。
+     * （早期实现只看补录窗口，第 1 轮补录窗口在时间线上早于填报窗口时就误判为已关闭。）
      */
     private boolean registrationClosed(Integer round) {
         if (round < adminMapper.lastActiveRound()) return false;
-        LocalDateTime refillEnd = stageService.getEndAt(round, STAGE_REFILL);
-        return refillEnd == null || !refillEnd.isAfter(LocalDateTime.now());
-    }
-
-    /**
-     * 收口安置：把本轮还没着落的学生一次性全部落到实训室。
-     *
-     * 顺序：
-     *   1. 有待确认拟录取的 → 按顺位定第一个（其余作废）
-     *   2. 没有任何拟录取的 → 优先同室空位，其次跨室（须服从跨室）
-     *   3. includeRefusers=true 时，对不服从调剂的人也强制安置（即"约谈后统筹"）
-     */
-    @Transactional
-    public Map<String, Object> finalizePlacement(Long adminId, Integer round, boolean includeRefusers) {
-        requireAdmin(adminId);
-        Publicity pub = adminMapper.latestPublicity(round);
-        if (pub != null && ("PUBLISHED".equals(pub.status) || "ENDED".equals(pub.status))) {
-            throw new BizException(2010, "最终名单已经公示，不能再改安置结果；如需调整请先作废公示");
-        }
-
         LocalDateTime now = LocalDateTime.now();
-
-        List<Map<String, Object>> caps = adminMapper.mentorCapacity(round);
-        Map<Long, Integer> left = capacityLeft(round);
-        Map<Long, Map<String, Object>> info = studentInfo();
-
-        Map<Long, java.util.Set<Long>> labsOf = new LinkedHashMap<>();
-        Map<Long, boolean[]> wishes = new LinkedHashMap<>();
-        for (Map<String, Object> w : adminMapper.studentWishes(round)) {
-            long sid = ((Number) w.get("studentId")).longValue();
-            long labId = ((Number) w.get("labId")).longValue();
-            labsOf.computeIfAbsent(sid, k -> new java.util.LinkedHashSet<>()).add(labId);
-            boolean[] bw = wishes.computeIfAbsent(sid, k -> new boolean[]{false, false});
-            if (asBool(w.get("adjustInLab"))) bw[0] = true;
-            if (asBool(w.get("adjustCross"))) bw[1] = true;
+        for (int stageNo : new int[]{STAGE_APPLY, STAGE_REFILL}) {
+            LocalDateTime end = stageService.getEndAt(round, stageNo);
+            if (end != null && end.isAfter(now)) return false;
         }
-
-        List<Long> applied = adminMapper.appliedStudentIds(round);
-        // 后面轮次已经录取的人不算本轮缺口，避免重复安置
-        java.util.Set<Long> confirmed = new java.util.HashSet<>(adminMapper.confirmedFromRoundOn(round));
-        // 最后一轮报名结束后，所有还没着落的学生都纳入（去重，避免和本轮已填报的人重复处理）
-        java.util.Set<Long> toPlace = new java.util.LinkedHashSet<>(applied);
-        if (registrationClosed(round)) {
-            for (Map<String, Object> s : adminMapper.studentsWithoutPlacement()) {
-                toPlace.add(((Number) s.get("studentId")).longValue());
-            }
-        }
-
-        int settledSingle = 0, settledMulti = 0, inLab = 0, cross = 0, forced = 0;
-        List<Long> stillUnplaced = new ArrayList<>();
-
-        for (Long sid : toPlace) {
-            if (confirmed.contains(sid)) continue;
-
-            List<Offer> issued = offerMapper.findIssuedAdmitted(sid, round);
-            if (!issued.isEmpty()) {
-                Offer pick = null;
-                for (Offer o : issued) {
-                    if (left.getOrDefault(o.mentorId, 0) > 0) { pick = o; break; }
-                }
-                if (pick != null) {
-                    offerMapper.updateStatus(pick.id, "CONFIRMED", now);
-                    offerMapper.expireAllOther(sid, round, pick.id);
-                    left.put(pick.mentorId, Math.max(0, left.getOrDefault(pick.mentorId, 0) - 1));
-                    confirmed.add(sid);
-                    if (issued.size() == 1) settledSingle++; else settledMulti++;
-                    continue;
-                }
-                // 他所有意向的导师都满了：这些意向作废，下面按调剂意愿重新分配，
-                // 绝对不能硬确认（否则就超录了）
-                for (Offer o : issued) {
-                    offerMapper.updateStatus(o.id, "EXPIRED", null);
-                }
-            }
-
-            boolean[] w = wishes.getOrDefault(sid, new boolean[]{false, false});
-            java.util.Set<Long> myLabs = labsOf.getOrDefault(sid, java.util.Set.of());
-
-            // ① 同室调剂：必须是"服从实训室内部调剂"的人
-            Long target = w[0] ? pickMentor(left, caps, myLabs, true) : null;
-            String how = "同室调剂";
-            if (target != null) {
-                inLab++;
-            } else if (w[1]) {
-                // ② 跨室调剂：必须是"服从跨实训室调剂"的人
-                target = pickMentor(left, caps, null, false);
-                how = "跨室调剂";
-                if (target != null) cross++;
-            } else if (includeRefusers) {
-                target = pickMentor(left, caps, null, false);
-                how = "学院统筹（经约谈）";
-                if (target != null) forced++;
-            }
-
-            if (target == null) {
-                stillUnplaced.add(sid);
-                continue;
-            }
-
-            long labId = 0;
-            for (Map<String, Object> c : caps) {
-                if (((Number) c.get("mentorId")).longValue() == target) {
-                    labId = ((Number) c.get("labId")).longValue();
-                    break;
-                }
-            }
-            placeConfirmed(sid, target, labId, round, now, how);
-            left.put(target, Math.max(0, left.getOrDefault(target, 0) - 1));
-            confirmed.add(sid);
-        }
-
-        logMapper.insert(adminId, "ADMIN", "FINALIZE_PLACEMENT", "ROUND", round.longValue(),
-                String.format("收口安置：单意向定案 %d，多意向定案 %d，同室 %d，跨室 %d，强制 %d，仍未安置 %d",
-                        settledSingle, settledMulti, inLab, cross, forced, stillUnplaced.size()));
-
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("settledSingle", settledSingle);
-        m.put("settledMulti", settledMulti);
-        m.put("assignedInLab", inLab);
-        m.put("assignedCross", cross);
-        m.put("forced", forced);
-        List<Map<String, Object>> leftUnplaced = new ArrayList<>();
-        for (Long sid : stillUnplaced) {
-            Map<String, Object> s = info.get(sid);
-            Map<String, Object> u = new LinkedHashMap<>();
-            u.put("studentId", sid);
-            u.put("code", s == null ? null : s.get("code"));
-            u.put("realName", s == null ? null : s.get("realName"));
-            leftUnplaced.add(u);
-        }
-        m.put("stillUnplaced", leftUnplaced);
-        m.put("stillUnplacedCount", leftUnplaced.size());
-        m.put("verify", placementVerify(round));
-        return m;
+        return true;
     }
 
-    /** 收口校验：每个已填报学生必须恰好有一个确认去向，且不能超过导师名额 */
+    /** 安置校验：每个已填报学生必须恰好有一个确认去向，且不能超过导师名额 */
     public Map<String, Object> placementVerify(Integer round) {
         List<Long> applied = adminMapper.appliedStudentIds(round);
         // 跨轮：只要在本轮或之后某一轮被录取，就算最终有着落
@@ -934,9 +875,16 @@ public class AdminService {
     public Map<String, Object> logs(Integer page, Integer size, String action) {
         int p = (page == null || page < 1) ? 1 : page;
         int s = (size == null || size < 1) ? 20 : Math.min(size, 200);
+        // action 支持逗号分隔的多选，如 "ADJUST_INTERNAL,ADJUST_CROSS"
+        List<String> actions = new ArrayList<>();
+        if (action != null && !action.isBlank()) {
+            for (String a : action.split(",")) {
+                if (!a.isBlank()) actions.add(a.trim());
+            }
+        }
         List<com.college.selection.entity.OperationLog> list =
-                logMapper.page(action, (p - 1) * s, s);
-        int total = logMapper.count(action);
+                logMapper.page(actions, (p - 1) * s, s);
+        int total = logMapper.count(actions);
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("list", list);

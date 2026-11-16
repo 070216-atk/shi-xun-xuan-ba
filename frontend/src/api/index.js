@@ -42,6 +42,11 @@ export const confirmOffer = (offerId) => http.post(`/student/offers/${offerId}/c
 /** 撤销确认（选课式：退回待确认，名额让给该导师递补第一名） */
 export const releaseOffer = (offerId) => http.post(`/student/offers/${offerId}/release`)
 export const getMyResult = (round = 1) => http.get(`/student/result?round=${round}`)
+/** 跨室转组：本人本轮的申请（含已处理历史） */
+export const getMyTransfers = (round = 1) => http.get(`/student/transfers?round=${round}`)
+/** body: { round, targetLabId, targetMentorId, reason } */
+export const submitTransfer = (body) => http.post('/student/transfers', body)
+export const cancelTransfer = (id) => http.del(`/student/transfers/${id}`)
 
 // ---------------- 导师端 ----------------
 
@@ -52,8 +57,6 @@ export const getInterviewList = (round = 1) => http.get(`/teacher/interview-list
 export const inviteStudents = (body) => http.post('/teacher/invites', body)
 /** 取消入围 */
 export const uninviteStudent = (studentId, round = 1) => http.del(`/teacher/invites/${studentId}?round=${round}`)
-/** 自动录取：sortBy = score | manual */
-export const autoAdmit = (body) => http.post('/teacher/lists/auto', body)
 /** 别人指定调剂给我的学生 */
 export const getAdjustInbox = (round = 1) => http.get(`/teacher/adjust-inbox?round=${round}`)
 export const acceptAdjust = (offerId, round = 1) => http.post(`/teacher/adjust-inbox/${offerId}/accept?round=${round}`)
@@ -65,6 +68,10 @@ export const getTeacherLists = (round = 1) => http.get(`/teacher/lists?round=${r
 export const saveTeacherLists = (body) => http.put('/teacher/lists', body)
 /** 撤销已确认的录取，会自动按递补顺位补位 */
 export const revokeAdmit = (body) => http.post('/teacher/lists/revoke', body)
+/** 已录取学生申请转到我的名下（约谈后处理） */
+export const getTransferInbox = (round = 1) => http.get(`/teacher/transfer-inbox?round=${round}`)
+export const acceptTransfer = (id, body, round = 1) => http.post(`/teacher/transfer-inbox/${id}/accept?round=${round}`, body)
+export const rejectTransfer = (id, body, round = 1) => http.post(`/teacher/transfer-inbox/${id}/reject?round=${round}`, body)
 
 // ---------------- 管理端 ----------------
 
@@ -76,21 +83,23 @@ export const switchStage = (body) => http.post('/admin/stages/switch', body)
 export const getAdjustPool = (round = 1) => http.get(`/admin/adjust/pool?round=${round}`)
 export const adjustInternal = (body) => http.post('/admin/adjust/internal', body)
 export const adjustCross = (body) => http.post('/admin/adjust/cross', body)
-export const adjustTalk = (body) => http.post('/admin/adjust/talk', body)
+/** 本轮学生自己发起的跨室转组（管理端只读查看） */
+export const getAdminTransfers = (round = 1) => http.get(`/admin/transfers?round=${round}`)
 export const getStudents = () => http.get('/admin/students')
 export const getResults = (round = 1) => http.get(`/admin/results?round=${round}`)
 export const getPublicity = (round = 1) => http.get(`/admin/publicity?round=${round}`)
 export const publishPublicity = (body) => http.post('/admin/publicity/publish', body)
 export const endPublicity = (round = 1) => http.post(`/admin/publicity/end?round=${round}`)
 export const addObjection = (body) => http.post('/admin/publicity/objections', body)
+/** 当前公示里还没处理的异议 */
+export const getObjections = (round = 1) => http.get(`/admin/publicity/objections?round=${round}`)
 export const resolveObjections = (round = 1) => http.post(`/admin/publicity/objections/resolve?round=${round}`)
 export const openRound = (round) => http.post('/admin/rounds', { round })
 /** 手动结算：只有 1 个拟录取意向的学生自动确认，多个等学生自己选 */
 export const settleOffers = (round = 1) => http.post(`/admin/settle?round=${round}`)
 export const getDashboard = (round = 1) => http.get(`/admin/dashboard?round=${round}`)
-/** 收口安置：缺口 / 一键收口 / 校验 */
+/** 安置检查：缺口 / 校验 / 指定安置 */
 export const getPlacementGaps = (round = 1) => http.get(`/admin/placement/gaps?round=${round}`)
-export const finalizePlacement = (round = 1, includeRefusers = true) => http.post(`/admin/placement/finalize?round=${round}&includeRefusers=${includeRefusers}`)
 export const verifyPlacement = (round = 1) => http.get(`/admin/placement/verify?round=${round}`)
 /** 管理员指定安置（必须填原因，学生能看到） */
 export const assignPlacement = (body) => http.post('/admin/placement/assign', body)
@@ -105,3 +114,8 @@ export function getLogs({ page = 1, size = 20, action = '' } = {}) {
   const qs = `page=${page}&size=${size}` + (action ? `&action=${encodeURIComponent(action)}` : '')
   return http.get(`/admin/logs?${qs}`)
 }
+
+// ---------------- 站内通知 ----------------
+
+export const getMyNotifications = () => http.get('/notifications')
+export const markNotificationsRead = () => http.post('/notifications/read')

@@ -43,13 +43,16 @@ public interface OperationLogMapper {
             SELECT l.*, u.real_name AS operator_name
               FROM operation_log l LEFT JOIN sys_user u ON u.id = l.operator_id
              <where>
-               <if test="action != null and action != ''">AND l.action = #{action}</if>
+               <if test="actions != null and actions.size() > 0">
+                 AND l.action IN
+                 <foreach collection="actions" item="a" open="(" separator="," close=")">#{a}</foreach>
+               </if>
              </where>
              ORDER BY l.id DESC
              LIMIT #{size} OFFSET #{offset}
             </script>
             """)
-    List<OperationLog> page(@Param("action") String action,
+    List<OperationLog> page(@Param("actions") List<String> actions,
                             @Param("offset") int offset,
                             @Param("size") int size);
 
@@ -57,12 +60,29 @@ public interface OperationLogMapper {
             <script>
             SELECT COUNT(*) FROM operation_log
              <where>
-               <if test="action != null and action != ''">AND action = #{action}</if>
+               <if test="actions != null and actions.size() > 0">
+                 AND action IN
+                 <foreach collection="actions" item="a" open="(" separator="," close=")">#{a}</foreach>
+               </if>
              </where>
             </script>
             """)
-    int count(@Param("action") String action);
+    int count(@Param("actions") List<String> actions);
 
     @Select("SELECT DISTINCT action FROM operation_log ORDER BY action")
     List<String> distinctActions();
+
+    /** 某次公示中还没处理的异议（remark 形如「学号|原因」，清零后重新计数） */
+    @Select("""
+            SELECT l.id AS id, l.created_at AS createdAt, l.remark AS remark,
+                   u.real_name AS operatorName
+              FROM operation_log l
+              LEFT JOIN sys_user u ON u.id = l.operator_id
+             WHERE l.action = 'OBJECTION' AND l.target_type = 'PUBLICITY' AND l.target_id = #{publicityId}
+               AND l.id > COALESCE((SELECT MAX(id) FROM operation_log
+                                     WHERE action = 'OBJECTION_RESOLVE'
+                                       AND target_type = 'PUBLICITY' AND target_id = #{publicityId}), 0)
+             ORDER BY l.id
+            """)
+    List<java.util.Map<String, Object>> unresolvedObjections(@Param("publicityId") Long publicityId);
 }

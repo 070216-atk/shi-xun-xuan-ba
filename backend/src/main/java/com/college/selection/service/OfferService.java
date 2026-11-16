@@ -152,6 +152,12 @@ public class OfferService {
         if (wl.isEmpty()) {
             return null;
         }
+        // 腾出名额后仍要复核：被释放的意向还算占位（学生可能再确认回来），且名额可能被调小
+        Integer quota = offerMapper.lockMentorQuota(mentorId);
+        int used = offerMapper.countAdmittedByMentor(mentorId, round);
+        if (quota == null || used >= quota) {
+            return null;
+        }
         Offer next = wl.get(0);
         offerMapper.promoteToAdmitted(next.id,
                 offerMapper.maxAdmittedRank(mentorId, round) + 1,

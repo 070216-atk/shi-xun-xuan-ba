@@ -94,16 +94,17 @@ SELECT (SELECT COUNT(*) FROM lab)      AS 实训室,
 "@
 
     Write-Host ""
-    $demo = Read-Host "  是否把「意向填报 / 面试考核」阶段设成现在开放，方便演示？(y/N)"
+    $demo = Read-Host "  是否把第 1 轮「意向填报」阶段设成现在开放（有效期 20 天），方便演示？(y/N)"
     if ($demo -eq 'y') {
+        # 只开阶段 3：同一时间只允许一个阶段开放，不能和面试阶段并行
         & $mysql "--defaults-extra-file=$cnf" --default-character-set=utf8mb4 -e @"
 USE lab_selection;
 UPDATE stage SET start_at = DATE_SUB(NOW(), INTERVAL 1 HOUR),
                  end_at   = DATE_ADD(NOW(), INTERVAL 20 DAY)
- WHERE round_no = 1 AND stage_no IN (3, 4);
-SELECT stage_no, name, start_at, end_at FROM stage WHERE round_no = 1 AND stage_no IN (3,4);
+ WHERE round_no = 1 AND stage_no = 3;
+SELECT stage_no, name, start_at, end_at FROM stage WHERE round_no = 1 ORDER BY stage_no;
 "@
-        Step "已开放（有效期 20 天）"
+        Step "已开放「意向填报」（有效期 20 天），其余阶段保持未开放"
     }
 }
 finally {
