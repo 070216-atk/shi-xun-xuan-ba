@@ -465,6 +465,9 @@ public class TeacherService {
     @Transactional
     public Map<String, Object> rejectAdjust(Long teacherId, Integer round, Long offerId, String reason) {
         SysUser t = requireTeacher(teacherId);
+        // 和"接收调剂"用同一套窗口：面试 / 拟录取确认 / 补录轮，公示后一律不许再动
+        stageService.assertAnyOpen(round, STAGE_INTERVIEW, STAGE_CONFIRM, STAGE_REFILL);
+        assertNotPublished(round);
 
         Offer o = offerMapper.lockById(offerId);
         if (o == null) {

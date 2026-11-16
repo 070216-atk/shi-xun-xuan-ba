@@ -144,6 +144,9 @@ public class TransferService {
         if (!"PENDING".equals(r.status)) {
             throw new BizException(2006, "该申请已处理，不能撤销");
         }
+        // 撤销也是"改去向"的动作：只能在统筹调剂阶段、且公示前
+        stageService.assertOpen(r.roundNo, STAGE_ADJUST);
+        assertNotPublished(r.roundNo);
         transferMapper.updateHandled(id, "CANCELED", null, null, studentId, LocalDateTime.now());
     }
 
@@ -240,6 +243,9 @@ public class TransferService {
         if (!"PENDING".equals(r.status)) {
             throw new BizException(2006, "该申请已处理");
         }
+        // 和"接收"一致：只在统筹调剂阶段、公示前处理
+        stageService.assertOpen(r.roundNo, STAGE_ADJUST);
+        assertNotPublished(r.roundNo);
         if (reason != null && reason.length() > 200) {
             throw new BizException(2007, "拒绝原因最多 200 字");
         }

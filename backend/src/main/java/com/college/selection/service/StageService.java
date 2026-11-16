@@ -107,12 +107,16 @@ public class StageService {
 
     /**
      * 多个环节任一开放即放行（如意向填报 3 与分轮补录 6 都允许学生报名）。
-     * 全都不开放时，报第一个已配置环节的时间窗。
+     * 全都不开放时，报出"允许哪几个环节"及各自的时间窗，而不是只说第一个，
+     * 否则学生会以为只有一种可能（例如只看到"开放日"却不知道填报阶段也算）。
      */
     public void assertAnyOpen(Integer round, Integer... stageNos) {
         LocalDateTime now = LocalDateTime.now();
         List<Stage> stages = stageMapper.findByRound(round);
-        String firstError = null;
+        StringBuilder names = new StringBuilder();
+        // 多个阶段常常共用同一个时间窗，去重后只显示一次，别把同一条时间抄三遍
+        java.util.LinkedHashSet<String> windows = new java.util.LinkedHashSet<>();
+        String missing = null;
 
         for (Integer stageNo : stageNos) {
             Stage matched = null;
@@ -123,21 +127,28 @@ public class StageService {
                 }
             }
             if (matched == null) {
-                if (firstError == null) {
-                    firstError = "第 " + round + " 轮的第 " + stageNo + " 阶段还没有配置时间窗";
+                if (missing == null) {
+                    missing = "第 " + round + " 轮的第 " + stageNo + " 阶段还没有配置时间窗";
                 }
                 continue;
             }
             if (!now.isBefore(matched.startAt) && !now.isAfter(matched.endAt)) {
                 return;
             }
-            if (firstError == null) {
-                firstError = String.format("当前不在「%s」的开放时间内（%s 至 %s）",
-                        matched.name, matched.startAt.format(FMT), matched.endAt.format(FMT));
+            if (names.length() > 0) {
+                names.append(" / ");
             }
+            names.append(matched.name);
+            windows.add(matched.startAt.format(FMT) + " 至 " + matched.endAt.format(FMT));
         }
 
-        throw new BizException(ErrorCode.OUT_OF_WINDOW, firstError);
+        if (names.length() == 0) {
+            throw new BizException(ErrorCode.OUT_OF_WINDOW,
+                    missing == null ? "当前没有可用的阶段" : missing);
+        }
+        throw new BizException(ErrorCode.OUT_OF_WINDOW,
+                String.format("当前不在「%s」任一阶段的开放时间内（%s）",
+                        names, String.join("；", windows)));
     }
 
     /** 取某阶段的结束时间，没配置返回 null（用在 offer 的确认截止时间上） */

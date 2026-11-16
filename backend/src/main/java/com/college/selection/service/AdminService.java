@@ -37,6 +37,10 @@ public class AdminService {
     private static final int STAGE_REFILL = 6;
     /** 拟录取与学生确认对应第 5 个环节 */
     private static final int STAGE_CONFIRM = 5;
+    /** 实训室开放日：名额公布在这里才有意义 */
+    private static final int STAGE_OPEN_DAY = 2;
+    /** 结果公示与正式入组 */
+    private static final int STAGE_PUBLICITY = 8;
 
     private final AdminMapper adminMapper;
     private final OfferMapper offerMapper;
@@ -91,6 +95,9 @@ public class AdminService {
     @Transactional
     public Map<String, Object> publishQuotas(Long adminId, Integer round) {
         requireAdmin(adminId);
+        // 名额公布只在「开放日 / 意向填报 / 分轮补录」有意义：
+        // 结果都公示完了还广播"还有 N 个空位"会误导学生
+        stageService.assertAnyOpen(round, STAGE_OPEN_DAY, STAGE_APPLY, STAGE_REFILL);
         List<QuotaVO> qs = quotas(round);
         int total = 0;
         for (QuotaVO q : qs) {
@@ -315,6 +322,9 @@ public class AdminService {
     @Transactional
     public Map<String, Object> settle(Long adminId, Integer round) {
         requireAdmin(adminId);
+        // 结算只能发生在「拟录取与学生确认」或补录轮。
+        // 否则在填报/面试阶段点一下，就会把还没发完名单的意向直接定案。
+        stageService.assertAnyOpen(round, STAGE_CONFIRM, STAGE_REFILL);
         return settleOffers(round);
     }
 
@@ -376,6 +386,8 @@ public class AdminService {
     @Transactional
     public synchronized Publicity publish(Long adminId, Integer round, Integer days) {
         requireAdmin(adminId);
+        // 公示只能是第 8 环节；在别的阶段点发布等于跳过调剂/补录
+        stageService.assertOpen(round, STAGE_PUBLICITY);
         Publicity last = adminMapper.latestPublicity(round);
         if (last != null && "PUBLISHED".equals(last.status)) {
             throw new BizException(2010, "已经处于公示中，请先结束本次公示");
@@ -414,6 +426,7 @@ public class AdminService {
 
     public void endPublicity(Long adminId, Integer round) {
         requireAdmin(adminId);
+        stageService.assertOpen(round, STAGE_PUBLICITY);
         Publicity last = adminMapper.latestPublicity(round);
         if (last == null || !"PUBLISHED".equals(last.status)) {
             throw new BizException(2010, "当前没有进行中的公示");
@@ -446,6 +459,17 @@ public class AdminService {
         if (prevStatus == null) {
             throw new BizException(2011, "第 " + (round - 1) + " 轮不存在");
         }
+        if ("OPEN".equals(adminMapper.roundStatus(round))) {
+            throw new BizException(2011, "第 " + round + " 轮已经在进行中，不用重复开启");
+        }
+        // 开补录轮 = 关掉上一轮。上一轮还停在报名/面试/确认阶段时不允许开，
+        // 否则会出现"两轮同时在报名"，学生的意向到底算哪一轮会乱。
+        Stage prevStage = stageService.current(round - 1);
+        if (prevStage != null && prevStage.stageNo < STAGE_ADJUST) {
+            throw new BizException(2011,
+                    "第 " + (round - 1) + " 轮还停在「" + prevStage.name
+                            + "」，要等它走到「统筹调剂录取」或「结果公示」后才能开补录轮");
+        }
         if ("OPEN".equals(prevStatus)) {
             adminMapper.closeRound(round - 1);
         }
@@ -470,6 +494,7 @@ public class AdminService {
     @Transactional
     public void addObjection(Long adminId, Integer round, String studentCode, String reason) {
         requireAdmin(adminId);
+        stageService.assertOpen(round, STAGE_PUBLICITY);
         Publicity p = adminMapper.latestPublicity(round);
         if (p == null || !"PUBLISHED".equals(p.status)) {
             throw new BizException(2010, "当前没有进行中的公示");
@@ -509,6 +534,7 @@ public class AdminService {
     @Transactional
     public void resolveObjections(Long adminId, Integer round) {
         requireAdmin(adminId);
+        stageService.assertOpen(round, STAGE_PUBLICITY);
         Publicity p = adminMapper.latestPublicity(round);
         if (p == null) {
             throw new BizException(2010, "还没有公示记录");
