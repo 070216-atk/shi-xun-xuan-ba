@@ -4,7 +4,7 @@
     <el-alert type="info" :closable="false" style="margin-bottom:16px"
       title="时间窗以服务器时间为准。「切换到该阶段」会把该阶段设成现在开始、4 小时后结束，并自动关闭本轮其他阶段。可以自由切换，包括切回更早的阶段（只改时间窗，不删除任何已产生的数据）。" />
     <el-alert v-if="!roundOpen" type="warning" :closable="false" style="margin-bottom:16px"
-      :title="`第 ${store.round} 轮已结束，只能查看；要调阶段请先在右上角切到进行中的轮次。`" />
+      :title="notOpenTitle" />
     <div class="card">
       <el-table :data="stages" size="small">
         <el-table-column prop="id" label="#" width="50" />
@@ -38,9 +38,21 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { stages, store, loadPublic, switchStage } from '../../store'
+import { stages, store, roundState, loadPublic, switchStage } from '../../store'
 
 const roundOpen = computed(() => store.rounds.find(r => r.roundNo === store.round)?.status === 'OPEN')
+
+/** 这轮不能改阶段的原因：已结束 / 未开启 */
+const notOpenTitle = computed(() => {
+  const { status, openRound } = roundState()
+  if (status === 'PLANNING') {
+    return `第 ${store.round} 轮还没有开启，不能调整阶段。请先切回进行中的第 ${openRound} 轮。`
+  }
+  if (status === 'CLOSED') {
+    return `第 ${store.round} 轮已结束，只能查看。要调阶段请先切回进行中的第 ${openRound} 轮。`
+  }
+  return `第 ${store.round} 轮当前不可调整阶段。`
+})
 
 /** 当前阶段序号；没有进行中的阶段时为 null */
 const currentNo = computed(() => stages.find(s => s.current)?.id ?? null)

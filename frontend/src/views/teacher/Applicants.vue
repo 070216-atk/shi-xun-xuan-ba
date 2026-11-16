@@ -19,7 +19,7 @@
         <el-button type="primary" :disabled="!selected.length || !canInvite" :loading="busy" @click="bulkInvite">
           把选中的 {{ selected.length }} 人拉进面试
         </el-button>
-        <span v-if="!canInvite" class="muted">当前不在面试阶段，不能调整入围名单</span>
+        <span v-if="!canInvite" class="muted">当前不能调整入围名单（需要阶段 4 面试 或 6 分轮补录；现在是 {{ store.currentStage || '无' }}）</span>
       </div>
 
       <el-table :data="rows" size="small" @selection-change="s => (selected = s)">

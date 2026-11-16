@@ -22,7 +22,7 @@
         当前第 {{ store.round }} 轮。开启下一轮会把上一轮置为结束，并复制一份阶段时间窗给新一轮（再去「流程配置」里改具体日期）。
       </p>
       <el-alert v-if="!roundOpen" type="info" :closable="false" style="margin-bottom:12px"
-        :title="`第 ${store.round} 轮已结束，以下操作请先在右上角切换到进行中的轮次。`" />
+        :title="notOpenTitle" />
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <el-button type="primary" :disabled="!roundOpen || ![2, 3, 6].includes(store.currentStage)" @click="publish">公布剩余名额</el-button>
         <el-button :disabled="!roundOpen || ![5, 6].includes(store.currentStage)" @click="settle">结算拟录取</el-button>
@@ -41,10 +41,22 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { store, loadAdmin, openNextRound, publishQuotas, settleRound } from '../../store'
+import { store, roundState, loadAdmin, openNextRound, publishQuotas, settleRound } from '../../store'
 
 const rows = computed(() => store.quotas || [])
 const roundOpen = computed(() => store.rounds.find(r => r.roundNo === store.round)?.status === 'OPEN')
+
+/** 这轮不能操作的原因：已结束 / 未开启，文案要和状态对得上 */
+const notOpenTitle = computed(() => {
+  const { status, openRound } = roundState()
+  if (status === 'PLANNING') {
+    return `第 ${store.round} 轮还没有开启，不能在这轮上操作。请先切回进行中的第 ${openRound} 轮，再在那里点「开启第 ${store.round} 轮补录」。`
+  }
+  if (status === 'CLOSED') {
+    return `第 ${store.round} 轮已结束，只能查看。要操作请先在右上角切到进行中的第 ${openRound} 轮。`
+  }
+  return `第 ${store.round} 轮当前不可操作。`
+})
 
 function refresh() {
   loadAdmin().then(() => ElMessage.success('已刷新')).catch(e => ElMessage.error(e.message))

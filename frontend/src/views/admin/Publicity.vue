@@ -2,7 +2,7 @@
   <div>
     <div class="page-title">公示管理</div>
     <el-alert v-if="store.currentStage !== 8" type="info" :closable="false" style="margin-bottom:12px"
-      title="公示相关操作只在「8 结果公示与正式入组」阶段可用。现在不在该阶段，按钮已禁用 —— 请先去「流程配置」切到阶段 8。" />
+      :title="`公示相关操作只在「8 结果公示与正式入组」阶段可用；现在是 ${store.currentStage || '无'}，按钮已禁用 —— 请先在「流程配置」切到阶段 8。`" />
     <div class="card">
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         <el-tag :type="statusType">{{ statusText }}</el-tag>

@@ -7,7 +7,7 @@
       <el-tag v-else-if="store.currentStage === 7" type="info" style="margin-left:8px">统筹调剂</el-tag>
     </div>
     <el-alert v-if="!canSubmit" type="info" :closable="false" style="margin-bottom:16px"
-      title="名单只能在「导师初选与面试考核」「拟录取与学生确认」或「分轮补录」阶段提交；现在不在开放时间内，可以先看名单，等阶段切换后再提交。" />
+      :title="`名单只能在「4 面试」「5 拟录取确认」「6 分轮补录」阶段提交；现在是 ${store.currentStage || '无'}，可以先看名单，等阶段切换后再提交。`" />
     <el-alert type="warning" :closable="false" style="margin-bottom:16px"
       :title="`拟录取不得超过你个人的名额（${quota} 人）；递补按顺位排序，用于放弃后的自动递补；内部调剂候选用于统筹调剂第一优先级。三份名单都只能从已完成面试评分的学生中选择。`" />
     <el-alert v-if="canSubmit && !candidates.length" type="info" :closable="false" style="margin-bottom:16px"

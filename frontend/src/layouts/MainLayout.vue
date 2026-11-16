@@ -46,7 +46,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { store, logout, setRound, loadNotifications, markNotificationsRead } from '../store'
+import { store, roundText, logout, setRound, loadNotifications, markNotificationsRead } from '../store'
 
 const router = useRouter()
 const route = useRoute()
@@ -63,7 +63,7 @@ function openNotif() {
   markNotificationsRead()
 }
 const roleName = computed(() => ({ student: '学生', teacher: '导师', admin: '学院管理员' }[store.user?.role] || ''))
-const roundText = (s) => ({ OPEN: '进行中', CLOSED: '已结束', PLANNING: '未开启' }[s] || s)
+// 轮次文案统一走 store 的 roundText，别再各处自己写一份
 
 async function onRoundChange(r) {
   try {

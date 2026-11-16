@@ -72,6 +72,18 @@ function indexStudents(list) {
 
 // ---------------- 公开数据 ----------------
 
+/** 轮次状态的统一文案：进行中 / 已结束 / 未开启（后端只有这三种状态） */
+export function roundText(status) {
+  return { OPEN: '进行中', CLOSED: '已结束', PLANNING: '未开启' }[status] || status || '未知'
+}
+
+/** 当前选中轮次的状态 + 正在进行的轮次号（提示"切回第几轮"时要用） */
+export function roundState() {
+  const cur = store.rounds.find((r) => r.roundNo === store.round)
+  const open = store.rounds.find((r) => r.status === 'OPEN')
+  return { status: cur ? cur.status : '', openRound: open ? open.roundNo : 0 }
+}
+
 /**
  * 拉轮次列表。preferOpen=true 时（启动/刷新页面）自动落到"进行中"的那一轮，
  * 这样管理员开启第 2 轮后刷新页面，看到的仍然是第 2 轮，而不是又被拉回第 1 轮。
@@ -496,7 +508,9 @@ export async function rejectTransfer(id, reason, interviewNote) {
 function assertRoundOpen() {
   const st = store.rounds.find((r) => r.roundNo === store.round)?.status
   if (st && st !== 'OPEN') {
-    throw new Error(`第 ${store.round} 轮已结束，不能在已结束的轮次上操作，请先在右上角切换到进行中的轮次`)
+    const open = store.rounds.find((r) => r.status === 'OPEN')
+    const hint = open ? `请先在右上角切到进行中的第 ${open.roundNo} 轮` : '当前没有进行中的轮次'
+    throw new Error(`第 ${store.round} 轮${roundText(st)}，不能在这轮上操作；${hint}`)
   }
 }
 
