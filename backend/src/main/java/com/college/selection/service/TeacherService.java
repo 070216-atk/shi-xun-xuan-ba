@@ -334,9 +334,15 @@ public class TeacherService {
             }
         }
 
-        for (Long studentId : admitted) {
+        // 已经确认去向（在本室或别处）的学生，不能再被写进任何一份名单。
+        // 之前只校验了「拟录取」，结果已确认的学生还能被放进递补/内部调剂，
+        // 对方导师点了接收才报错，学生去向自然一点没变。
+        for (Long studentId : allStudents) {
+            // 已确认本导师的学生允许继续留在拟录取里（上面已经校验过不能被移出）
+            if (alreadyConfirmed.contains(studentId)) continue;
             if (offerMapper.countAnyConfirmed(studentId, round) > 0) {
-                throw new BizException(2007, who(studentId) + " 已确认了其他导师，不能再发拟录取");
+                throw new BizException(2007,
+                        who(studentId) + " 已经确认了去向，不能再放进拟录取 / 递补 / 内部调剂名单");
             }
         }
 
@@ -450,14 +456,32 @@ public class TeacherService {
                 offerMapper.maxAdmittedRank(t.mentorId, round) + 1,
                 LocalDateTime.now(), stageService.getEndAt(round, STAGE_CONFIRM), null);
 
+        // 接收发生在「拟录取与学生确认」或补录轮时：学生手上只有这一个意向就当场确认。
+        // 否则会出现"导师接收了、学生页面还停在待确认、去向没变化"的错觉。
+        boolean confirmWindow = stageService.isOpen(round, STAGE_CONFIRM)
+                || stageService.isOpen(round, STAGE_REFILL);
+        boolean autoConfirmed = false;
+        if (confirmWindow && offerMapper.countAnyConfirmed(o.studentId, round) == 0) {
+            List<Offer> issued = offerMapper.findIssuedAdmitted(o.studentId, round);
+            if (issued.size() == 1) {
+                offerMapper.updateStatus(issued.get(0).id, "CONFIRMED", LocalDateTime.now());
+                autoConfirmed = true;
+            }
+        }
+
         logMapper.insertWithState(teacherId, "TEACHER", "ADJUST_ACCEPT", "OFFER", o.id,
                 "ADJUST_CANDIDATE", "ADMITTED", "接收调剂学生 " + who(o.studentId) + " 为拟录取");
         notificationMapper.insert(o.studentId, "OFFER", "调剂已被接收",
                 t.realName + " 老师已接收你的调剂，你获得了拟录取资格，请留意确认时间");
+        if (autoConfirmed) {
+            notificationMapper.insert(o.studentId, "OFFER", "去向已自动确认",
+                    "你没有其他待确认的意向，系统已把你的去向确认为 " + t.realName + " 老师");
+        }
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("studentId", o.studentId);
         m.put("newOfferId", created.id);
+        m.put("autoConfirmed", autoConfirmed);
         return m;
     }
 

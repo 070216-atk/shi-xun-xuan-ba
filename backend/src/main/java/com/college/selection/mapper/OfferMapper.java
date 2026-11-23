@@ -144,6 +144,16 @@ public interface OfferMapper {
               LEFT JOIN mentor tm ON tm.id = o.target_mentor_id
              WHERE o.round_no = #{round} AND o.type = 'ADJUST_CANDIDATE'
                AND o.status = 'ISSUED' AND o.target_mentor_id = #{mentorId}
+               -- 学生已经在本导师名下（拟录取/递补）或已确认了别处时，这条调剂收不了，
+               -- 不再显示，免得导师点了接收只得到一句报错
+               AND NOT EXISTS (SELECT 1 FROM offer o2
+                                WHERE o2.student_id = o.student_id AND o2.round_no = o.round_no
+                                  AND o2.mentor_id = o.target_mentor_id
+                                  AND o2.type IN ('ADMITTED', 'WAITLIST')
+                                  AND o2.status IN ('ISSUED', 'CONFIRMED'))
+               AND NOT EXISTS (SELECT 1 FROM offer o3
+                                WHERE o3.student_id = o.student_id AND o3.round_no = o.round_no
+                                  AND o3.status = 'CONFIRMED')
              ORDER BY o.rank_no, o.id
             """)
     List<Offer> findAdjustInbox(@Param("mentorId") Long mentorId, @Param("round") Integer round);
